@@ -1,0 +1,7 @@
+.git
+.gitignore
+tmp
+labra.db
+*.db
+*.log
+node_modules

@@ -55,7 +55,7 @@
 
 <section class="page">
 	<h1>Settings</h1>
-	<p>Connect your AWS account using AssumeRole metadata.</p>
+	<p class="muted">Connect your AWS account using AssumeRole metadata.</p>
 
 	<div class="card">
 		<h2>Connect AWS</h2>
@@ -74,13 +74,15 @@
 	<div class="card">
 		<h2>Existing Connections</h2>
 		{#if connections.length === 0}
-			<p>No connections yet.</p>
+			<p class="muted">No connections yet.</p>
 		{:else}
-			<ul>
+			<ul class="connection-list">
 				{#each connections as c}
 					<li>
-						<strong>{c.account_id}</strong> - {c.region} - {c.status}
-						<div class="small">{c.role_arn}</div>
+						<div>
+							<strong>{c.account_id}</strong> - {c.region} - {c.status}
+							<div class="small">{c.role_arn}</div>
+						</div>
 					</li>
 				{/each}
 			</ul>
@@ -89,51 +91,24 @@
 </section>
 
 <style>
-	.page {
-		max-width: 840px;
-		margin: 0 auto;
-		padding: 2rem 1rem;
-		display: grid;
-		gap: 1rem;
-	}
-	.card {
-		border: 1px solid #32384f;
-		background: #1a1f33;
-		border-radius: 12px;
-		padding: 1rem;
-		display: grid;
-		gap: 0.5rem;
-	}
-	input {
-		background: #101423;
-		border: 1px solid #3a4058;
-		border-radius: 8px;
-		color: #d9e1ff;
-		padding: 0.5rem;
-	}
-	button {
-		width: fit-content;
-		background: #c9d2ff;
-		color: #11111b;
-		border: none;
-		border-radius: 10px;
-		padding: 0.6rem 1rem;
-		font-weight: 600;
-		cursor: pointer;
-	}
-	.small {
-		font-size: 0.82rem;
-		color: #b3bddf;
-	}
-	.error {
-		color: #ffb4b4;
-	}
-	.success {
-		color: #98e5b0;
-	}
-	ul {
+	.connection-list {
+		list-style: none;
 		display: grid;
 		gap: 0.6rem;
-		padding-left: 1.1rem;
+		padding: 0;
+		margin: 0;
+	}
+
+	.connection-list li {
+		padding: 0.7rem 0.8rem;
+		border: 1px solid rgba(183, 189, 248, 0.2);
+		border-radius: var(--radius-sm);
+		background: rgba(24, 25, 38, 0.45);
+	}
+
+	.small {
+		margin-top: 0.2rem;
+		font-size: 0.82rem;
+		opacity: 0.78;
 	}
 </style>

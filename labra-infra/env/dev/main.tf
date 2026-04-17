@@ -17,9 +17,20 @@ provider "aws" {
   }
 }
 
+provider "aws" {
+  alias  = "us_east_1"
+  region = "us-east-1"
+
+  default_tags {
+    tags = local.tags
+  }
+}
+
 locals {
-  component_suffix = var.component == "" ? "" : "-${var.component}"
-  resource_prefix  = "${var.project_name}-${var.environment}${local.component_suffix}"
+  component_suffix             = var.component == "" ? "" : "-${var.component}"
+  resource_prefix              = "${var.project_name}-${var.environment}${local.component_suffix}"
+  control_api_db_mount_path    = trimspace(var.control_api_db_mount_path)
+  control_api_effective_db_url = trimspace(var.control_api_db_url) != "" ? trimspace(var.control_api_db_url) : "${local.control_api_db_mount_path}/labra.db"
   tags = merge({
     Project      = var.project_name
     Environment  = var.environment
@@ -138,6 +149,16 @@ module "ecr_baseline" {
   tags                = local.tags
 }
 
+module "control_api_db_storage" {
+  count  = var.enable_control_api_db_storage && var.enable_control_plane_services_baseline && var.enable_foundation_modules ? 1 : 0
+  source = "../../modules/control-api-db-storage"
+
+  name_prefix       = local.resource_prefix
+  subnet_ids        = length(module.vpc_baseline[0].private_subnet_ids) > 0 ? module.vpc_baseline[0].private_subnet_ids : module.vpc_baseline[0].public_subnet_ids
+  security_group_id = module.security_groups_baseline[0].internal_security_group_id
+  tags              = local.tags
+}
+
 module "control_plane_services_baseline" {
   count  = var.enable_control_plane_services_baseline && var.enable_control_plane_cluster && var.enable_foundation_modules ? 1 : 0
   source = "../../modules/control-plane-services-baseline"
@@ -162,29 +183,31 @@ module "control_plane_services_baseline" {
   assign_public_ip                    = var.control_plane_assign_public_ip
   create_execution_role               = var.control_plane_create_execution_role
   execution_role_arn                  = var.control_plane_execution_role_arn
+  api_efs_file_system_id              = var.enable_control_api_db_storage ? try(module.control_api_db_storage[0].file_system_id, null) : null
+  api_db_mount_path                   = local.control_api_db_mount_path
+  service_environment = {
+    "control-api" = {
+      APP_ENV                   = var.control_api_app_env
+      API_HOST                  = var.control_api_host
+      API_PORT                  = tostring(var.control_api_container_port)
+      DB_URL                    = local.control_api_effective_db_url
+      JWT_ISSUER                = var.control_api_jwt_issuer
+      JWT_AUDIENCE              = var.control_api_jwt_audience
+      JWT_SIGNING_SECRET        = var.control_api_jwt_signing_secret
+      GITHUB_WEBHOOK_SECRET     = var.control_api_github_webhook_secret
+      GITHUB_OAUTH_REDIRECT_URL = var.control_api_github_oauth_redirect_url
+      AI_PROMPT_VERSION         = var.control_api_ai_prompt_version
+      AI_PROVIDER_MODEL         = var.control_api_ai_provider_model
+      AI_FEATURE_ENABLED        = tostring(var.ai_feature_enabled)
+      AI_KILL_SWITCH_ENABLED    = tostring(var.ai_kill_switch_enabled)
+    }
+  }
   task_role_arns = {
     "control-api"         = try(module.iam_baseline[0].backend_service_role_arn, "")
     "deploy-orchestrator" = try(module.iam_baseline[0].deploy_runner_role_arn, "")
     "webhook-ingestor"    = try(module.iam_baseline[0].deploy_runner_role_arn, "")
   }
   tags = local.tags
-}
-
-module "metadata_host_baseline" {
-  count  = var.enable_metadata_host_baseline && var.enable_foundation_modules ? 1 : 0
-  source = "../../modules/metadata-host-baseline"
-
-  name_prefix             = local.resource_prefix
-  subnet_id               = module.vpc_baseline[0].private_subnet_ids[0]
-  security_group_ids      = [module.security_groups_baseline[0].internal_security_group_id]
-  instance_type           = var.metadata_host_instance_type
-  root_volume_size_gib    = var.metadata_host_root_volume_size_gib
-  key_name                = var.metadata_host_key_name
-  create_instance_profile = var.metadata_host_create_instance_profile
-  ssm_managed             = var.metadata_host_ssm_managed
-  ami_ssm_parameter       = var.metadata_host_ami_ssm_parameter
-  bootstrap_sqlite        = var.metadata_host_bootstrap_sqlite
-  tags                    = local.tags
 }
 
 module "cloudtrail_baseline" {
@@ -202,7 +225,7 @@ module "cloudtrail_baseline" {
 }
 
 module "waf_regional_baseline" {
-  count  = var.enable_waf_regional_baseline ? 1 : 0
+  count  = var.enable_waf_regional_baseline && var.enable_control_plane_services_baseline ? 1 : 0
   source = "../../modules/waf-regional-baseline"
 
   name_prefix            = local.resource_prefix
@@ -210,20 +233,16 @@ module "waf_regional_baseline" {
   tags                   = local.tags
 }
 
-module "edge_dns_baseline" {
-  count  = var.enable_edge_dns_baseline && trimspace(coalesce(var.edge_dns_hosted_zone_id, "")) != "" ? 1 : 0
-  source = "../../modules/edge-dns-baseline"
+module "waf_cloudfront_baseline" {
+  count  = var.enable_waf_cloudfront_baseline ? 1 : 0
+  source = "../../modules/waf-cloudfront-baseline"
 
-  name_prefix                       = local.resource_prefix
-  hosted_zone_id                    = var.edge_dns_hosted_zone_id
-  api_domain_name                   = var.api_domain_name
-  api_alb_dns_name                  = var.enable_control_plane_services_baseline ? try(module.control_plane_services_baseline[0].alb_dns_name, null) : null
-  api_alb_zone_id                   = var.enable_control_plane_services_baseline ? try(module.control_plane_services_baseline[0].alb_zone_id, null) : null
-  create_api_certificate            = var.edge_dns_create_api_certificate
-  frontend_domain_name              = var.frontend_domain_name
-  frontend_distribution_domain_name = module.static_runtime.distribution_domain_name
-  frontend_distribution_zone_id     = module.static_runtime.distribution_hosted_zone_id
-  tags                              = local.tags
+  providers = {
+    aws = aws.us_east_1
+  }
+
+  name_prefix = local.resource_prefix
+  tags        = local.tags
 }
 
 module "ai_runtime_baseline" {
@@ -258,6 +277,8 @@ module "static_runtime" {
   build_type                = var.build_type
   region                    = var.aws_region
   bucket_name               = var.static_site_bucket_name
+  api_origin_domain_name    = var.enable_control_plane_services_baseline ? try(module.control_plane_services_baseline[0].alb_dns_name, null) : null
+  cloudfront_web_acl_arn    = var.enable_waf_cloudfront_baseline ? try(module.waf_cloudfront_baseline[0].web_acl_arn, null) : null
   default_root_object       = var.static_default_root_object
   price_class               = var.static_price_class
   enable_spa_routing        = var.static_enable_spa_routing

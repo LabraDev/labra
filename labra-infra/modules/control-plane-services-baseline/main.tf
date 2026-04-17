@@ -1,5 +1,7 @@
 locals {
-  service_subnet_ids = length(var.private_subnet_ids) > 0 ? var.private_subnet_ids : var.public_subnet_ids
+  service_subnet_ids     = var.assign_public_ip ? var.public_subnet_ids : (length(var.private_subnet_ids) > 0 ? var.private_subnet_ids : var.public_subnet_ids)
+  api_efs_file_system_id = trimspace(coalesce(var.api_efs_file_system_id, ""))
+  enable_api_efs         = local.api_efs_file_system_id != ""
 
   services = {
     "control-api" = {
@@ -8,6 +10,7 @@ locals {
       port          = var.api_container_port
       lb_enabled    = true
       sg_id         = var.api_service_security_group_id
+      environment   = lookup(var.service_environment, "control-api", {})
     }
     "deploy-orchestrator" = {
       image         = trimspace(var.deploy_orchestrator_container_image)
@@ -15,6 +18,7 @@ locals {
       port          = null
       lb_enabled    = false
       sg_id         = var.worker_service_security_group_id
+      environment   = lookup(var.service_environment, "deploy-orchestrator", {})
     }
     "webhook-ingestor" = {
       image         = trimspace(var.webhook_ingestor_container_image)
@@ -22,6 +26,7 @@ locals {
       port          = null
       lb_enabled    = false
       sg_id         = var.worker_service_security_group_id
+      environment   = lookup(var.service_environment, "webhook-ingestor", {})
     }
   }
 
@@ -114,6 +119,20 @@ resource "aws_ecs_task_definition" "service" {
   execution_role_arn       = local.resolved_execution_role_arn
   task_role_arn            = trimspace(lookup(var.task_role_arns, each.key, "")) != "" ? trimspace(lookup(var.task_role_arns, each.key, "")) : null
 
+  dynamic "volume" {
+    for_each = each.key == "control-api" && local.enable_api_efs ? [1] : []
+
+    content {
+      name = "control-api-db"
+
+      efs_volume_configuration {
+        file_system_id     = local.api_efs_file_system_id
+        root_directory     = "/"
+        transit_encryption = "ENABLED"
+      }
+    }
+  }
+
   container_definitions = jsonencode([
     merge(
       {
@@ -127,7 +146,13 @@ resource "aws_ecs_task_definition" "service" {
             awslogs-region        = data.aws_region.current.name
             awslogs-stream-prefix = "ecs"
           }
-        }
+        },
+        environment = [
+          for env_key, env_value in each.value.environment : {
+            name  = env_key
+            value = env_value
+          }
+        ]
       },
       each.key == "control-api" ? {
         portMappings = [
@@ -135,6 +160,15 @@ resource "aws_ecs_task_definition" "service" {
             containerPort = each.value.port
             hostPort      = each.value.port
             protocol      = "tcp"
+          }
+        ]
+      } : {},
+      each.key == "control-api" && local.enable_api_efs ? {
+        mountPoints = [
+          {
+            sourceVolume  = "control-api-db"
+            containerPath = var.api_db_mount_path
+            readOnly      = false
           }
         ]
       } : {},

@@ -5,10 +5,17 @@ export default defineConfig({
 	plugins: [sveltekit()],
 	server: {
 		proxy: {
-			'/api': {
+			'/v1': {
 				target: 'http://localhost:8080',
-				changeOrigin: true,
-				rewrite: (path) => path.replace(/^\/api/, '')
+				changeOrigin: true
+			},
+			'/health': {
+				target: 'http://localhost:8080',
+				changeOrigin: true
+			},
+			'/ready': {
+				target: 'http://localhost:8080',
+				changeOrigin: true
 			}
 		}
 	}

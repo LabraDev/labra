@@ -61,12 +61,7 @@
 		actionError = '';
 		actionMessage = '';
 		try {
-			const res = await apiPOST<{ deployment: { id: number } }>(
-				`/v1/deploys/${deploy.id}/retry`,
-				{},
-				undefined,
-				userID
-			);
+			const res = await apiPOST<{ deployment: { id: number } }>(`/v1/deploys/${deploy.id}/retry`, {}, undefined, userID);
 			const nextID = res?.deployment?.id;
 			if (nextID) {
 				window.location.href = `/deploys/${nextID}`;
@@ -183,11 +178,7 @@
 		<h2>AI Insight</h2>
 		<p class="muted">AI-generated output may be incorrect. Verify suggestions against deployment logs before acting.</p>
 		<div class="ai-controls">
-			<textarea
-				bind:value={aiPrompt}
-				rows="3"
-				placeholder="Ask AI for a focused deployment analysis (optional)"
-			></textarea>
+			<textarea bind:value={aiPrompt} rows="3" placeholder="Ask AI for a focused deployment analysis (optional)"></textarea>
 			<div class="ai-actions">
 				<button on:click={() => generateAIInsight(false)} disabled={aiBusy || loading || !deploy}>
 					{aiBusy ? 'Generating...' : 'Generate AI Insight'}
@@ -206,12 +197,8 @@
 			<article class="ai-result">
 				<h3>Latest Insight</h3>
 				<p>{aiResult.insight}</p>
-				<p class="muted">
-					Source: {aiResult.source} | Model: {aiResult.model} | Prompt Version: {aiResult.prompt_version}
-				</p>
-				<p class="muted">
-					Confidence: {aiResult.confidence} | Fallback Used: {aiResult.fallback_used ? 'yes' : 'no'}
-				</p>
+				<p class="muted">Source: {aiResult.source} | Model: {aiResult.model} | Prompt Version: {aiResult.prompt_version}</p>
+				<p class="muted">Confidence: {aiResult.confidence} | Fallback Used: {aiResult.fallback_used ? 'yes' : 'no'}</p>
 				<p class="muted">{aiResult.limitations}</p>
 			</article>
 		{/if}
@@ -232,25 +219,20 @@
 </section>
 
 <style>
-	.page { padding: 2rem; max-width: 1100px; margin: 0 auto; }
-	.toolbar { display: flex; justify-content: space-between; gap: 1rem; align-items: end; margin-bottom: 1.2rem; flex-wrap: wrap; }
-	.controls { display: flex; gap: 0.8rem; align-items: end; }
-	.back { display: inline-block; margin-top: 0.2rem; color: #a9b6e8; text-decoration: none; }
-	input { background: var(--crust); border: 1px solid var(--hr-color); color: var(--text-color); border-radius: 8px; padding: 0.5rem; width: 90px; margin-left: 0.4rem; }
-	button { background: var(--text-color); color: var(--crust); border: 0; border-radius: 8px; padding: 0.55rem 0.8rem; cursor: pointer; }
-	.summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1rem; margin-bottom: 1rem; }
-	article { background: #202236; border: 1px solid #2e314f; border-radius: 12px; padding: 1rem; }
-	.logs { list-style: none; padding: 0; margin: 0; background: #1f2135; border: 1px solid #2f3357; border-radius: 12px; }
-	.logs li { padding: 0.6rem 0.8rem; border-bottom: 1px solid #2f3357; display: flex; gap: 0.6rem; flex-wrap: wrap; }
-	.logs li:last-child { border-bottom: 0; }
-	.ai-controls { display: grid; gap: 0.6rem; margin-bottom: 0.8rem; }
-	textarea { background: var(--crust); border: 1px solid var(--hr-color); color: var(--text-color); border-radius: 8px; padding: 0.6rem; width: 100%; }
-	.ai-actions { display: flex; gap: 0.6rem; flex-wrap: wrap; }
-	.secondary { background: #a9b6e8; color: #1a1f33; }
-	.ai-result { margin-top: 0.6rem; margin-bottom: 1rem; background: #1f2135; border: 1px solid #2f3357; border-radius: 12px; padding: 0.9rem; }
-	.stamp { opacity: 0.7; }
-	.level { color: #b9c2ff; min-width: 55px; }
-	.error { color: #ff9ca8; }
-	.ok { color: #9ce4c5; }
-	.muted { opacity: 0.75; }
+	.ai-controls {
+		display: grid;
+		gap: 0.6rem;
+		margin-bottom: 0.8rem;
+	}
+
+	.ai-actions {
+		display: flex;
+		gap: 0.6rem;
+		flex-wrap: wrap;
+	}
+
+	.ai-result {
+		margin-top: 0.5rem;
+		margin-bottom: 0.8rem;
+	}
 </style>

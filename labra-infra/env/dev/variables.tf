@@ -119,12 +119,12 @@ variable "enable_cognito_baseline" {
 
 variable "cognito_callback_urls" {
   type    = list(string)
-  default = ["http://localhost:5173/dashboard"]
+  default = ["https://app.example.com/dashboard"]
 }
 
 variable "cognito_logout_urls" {
   type    = list(string)
-  default = ["http://localhost:5173/login"]
+  default = ["https://app.example.com/login"]
 }
 
 variable "cognito_create_domain" {
@@ -195,12 +195,72 @@ variable "webhook_ingestor_container_image" {
 
 variable "control_api_container_port" {
   type    = number
-  default = 80
+  default = 8080
 }
 
 variable "control_api_health_check_path" {
   type    = string
   default = "/health"
+}
+
+variable "control_api_app_env" {
+  type    = string
+  default = "prod"
+}
+
+variable "control_api_host" {
+  type    = string
+  default = "0.0.0.0"
+}
+
+variable "control_api_db_url" {
+  type    = string
+  default = ""
+}
+
+variable "enable_control_api_db_storage" {
+  type    = bool
+  default = true
+}
+
+variable "control_api_db_mount_path" {
+  type    = string
+  default = "/mnt/labra-db"
+}
+
+variable "control_api_jwt_issuer" {
+  type    = string
+  default = "labra-cloud-issuer"
+}
+
+variable "control_api_jwt_audience" {
+  type    = string
+  default = "labra-cloud-audience"
+}
+
+variable "control_api_jwt_signing_secret" {
+  type    = string
+  default = "replace-with-cloud-jwt-secret"
+}
+
+variable "control_api_github_webhook_secret" {
+  type    = string
+  default = "replace-with-cloud-webhook-secret"
+}
+
+variable "control_api_github_oauth_redirect_url" {
+  type    = string
+  default = ""
+}
+
+variable "control_api_ai_prompt_version" {
+  type    = string
+  default = "phase7-v1"
+}
+
+variable "control_api_ai_provider_model" {
+  type    = string
+  default = "mock-ops-v1"
 }
 
 variable "control_api_desired_count" {
@@ -236,46 +296,6 @@ variable "control_plane_create_execution_role" {
 variable "control_plane_execution_role_arn" {
   type    = string
   default = null
-}
-
-variable "enable_metadata_host_baseline" {
-  type    = bool
-  default = false
-}
-
-variable "metadata_host_instance_type" {
-  type    = string
-  default = "t3.micro"
-}
-
-variable "metadata_host_root_volume_size_gib" {
-  type    = number
-  default = 20
-}
-
-variable "metadata_host_key_name" {
-  type    = string
-  default = null
-}
-
-variable "metadata_host_create_instance_profile" {
-  type    = bool
-  default = true
-}
-
-variable "metadata_host_ssm_managed" {
-  type    = bool
-  default = true
-}
-
-variable "metadata_host_ami_ssm_parameter" {
-  type    = string
-  default = "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64"
-}
-
-variable "metadata_host_bootstrap_sqlite" {
-  type    = bool
-  default = true
 }
 
 variable "enable_cloudtrail_baseline" {
@@ -315,32 +335,12 @@ variable "cloudtrail_force_destroy" {
 
 variable "enable_waf_regional_baseline" {
   type    = bool
-  default = false
+  default = true
 }
 
-variable "enable_edge_dns_baseline" {
+variable "enable_waf_cloudfront_baseline" {
   type    = bool
-  default = false
-}
-
-variable "edge_dns_hosted_zone_id" {
-  type    = string
-  default = null
-}
-
-variable "api_domain_name" {
-  type    = string
-  default = null
-}
-
-variable "edge_dns_create_api_certificate" {
-  type    = bool
-  default = false
-}
-
-variable "frontend_domain_name" {
-  type    = string
-  default = null
+  default = true
 }
 
 variable "enable_ai_runtime_baseline" {
@@ -498,84 +498,4 @@ variable "static_alarm_evaluation_periods" {
 variable "static_cf_5xx_rate_threshold" {
   type    = number
   default = 1
-}
-
-variable "runner_enabled" {
-  type    = bool
-  default = false
-}
-
-variable "runner_launch_type" {
-  type    = string
-  default = "FARGATE"
-
-  validation {
-    condition     = var.runner_launch_type == "FARGATE"
-    error_message = "runner_launch_type must be FARGATE."
-  }
-}
-
-variable "runner_task_cpu" {
-  type    = number
-  default = 1024
-}
-
-variable "runner_task_memory" {
-  type    = number
-  default = 2048
-}
-
-variable "runner_ephemeral_storage_gib" {
-  type    = number
-  default = 21
-}
-
-variable "runner_timeout_seconds" {
-  type    = number
-  default = 3600
-
-  validation {
-    condition     = var.runner_timeout_seconds > 0
-    error_message = "runner_timeout_seconds must be > 0."
-  }
-}
-
-variable "runner_container_image" {
-  type    = string
-  default = "public.ecr.aws/docker/library/node:20-alpine"
-
-  validation {
-    condition     = length(trimspace(var.runner_container_image)) > 0
-    error_message = "runner_container_image cannot be empty."
-  }
-}
-
-variable "runner_assign_public_ip" {
-  type    = bool
-  default = false
-}
-
-variable "runner_subnet_ids" {
-  type    = list(string)
-  default = []
-}
-
-variable "runner_security_group_ids" {
-  type    = list(string)
-  default = []
-}
-
-variable "runner_log_retention_days" {
-  type    = number
-  default = 14
-}
-
-variable "runner_execution_role_name" {
-  type    = string
-  default = "labra-runner-execution-role"
-}
-
-variable "runner_task_role_name" {
-  type    = string
-  default = "labra-runner-task-role"
 }

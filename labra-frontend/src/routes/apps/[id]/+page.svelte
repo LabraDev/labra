@@ -85,12 +85,7 @@
 		actionError = '';
 		actionMessage = '';
 		try {
-			const updated = await apiPATCH<App>(
-				`/v1/apps/${app.id}`,
-				{ auto_deploy_enabled: !app.auto_deploy_enabled },
-				undefined,
-				userID
-			);
+			const updated = await apiPATCH<App>(`/v1/apps/${app.id}`, { auto_deploy_enabled: !app.auto_deploy_enabled }, undefined, userID);
 			app = updated;
 			actionMessage = `Auto-deploy ${updated.auto_deploy_enabled ? 'enabled' : 'disabled'}`;
 			await loadPage();
@@ -203,24 +198,3 @@
 		{/if}
 	{/if}
 </section>
-
-<style>
-	.page { padding: 2rem; max-width: 1100px; margin: 0 auto; }
-	.back { display: inline-block; margin-bottom: 0.4rem; color: #a9b6e8; text-decoration: none; }
-	.toolbar { display: flex; justify-content: space-between; gap: 1rem; align-items: end; margin-bottom: 1.2rem; flex-wrap: wrap; }
-	.controls { display: flex; gap: 0.8rem; align-items: end; }
-	input { background: var(--crust); border: 1px solid var(--hr-color); color: var(--text-color); border-radius: 8px; padding: 0.5rem; width: 90px; margin-left: 0.4rem; }
-	button { background: var(--text-color); color: var(--crust); border: 0; border-radius: 8px; padding: 0.55rem 0.8rem; cursor: pointer; }
-	.summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1rem; margin-bottom: 1rem; }
-	article { background: #202236; border: 1px solid #2e314f; border-radius: 12px; padding: 1rem; }
-	.config-history { list-style: none; padding: 0; margin: 0 0 1rem; background: #1f2135; border: 1px solid #2f3357; border-radius: 10px; }
-	.config-history li { padding: 0.6rem 0.8rem; border-bottom: 1px solid #2f3357; }
-	.config-history li:last-child { border-bottom: 0; }
-	table { width: 100%; border-collapse: collapse; background: #1f2135; border-radius: 10px; overflow: hidden; }
-	th, td { text-align: left; padding: 0.6rem; border-bottom: 1px solid #2f3357; }
-	th { background: #282b45; }
-	a { color: #b0bfff; }
-	.error { color: #ff9ca8; }
-	.ok { color: #9ce4c5; }
-	.muted { opacity: 0.75; }
-</style>

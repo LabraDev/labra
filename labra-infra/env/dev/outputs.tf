@@ -170,16 +170,16 @@ output "control_plane_task_execution_role_arn" {
   value = try(module.control_plane_services_baseline[0].task_execution_role_arn, null)
 }
 
-output "metadata_host_instance_id" {
-  value = try(module.metadata_host_baseline[0].instance_id, null)
+output "control_api_db_url" {
+  value = local.control_api_effective_db_url
 }
 
-output "metadata_host_private_ip" {
-  value = try(module.metadata_host_baseline[0].private_ip, null)
+output "control_api_db_mount_path" {
+  value = var.control_api_db_mount_path
 }
 
-output "metadata_host_role_arn" {
-  value = try(module.metadata_host_baseline[0].iam_role_arn, null)
+output "control_api_db_filesystem_id" {
+  value = try(module.control_api_db_storage[0].file_system_id, null)
 }
 
 output "cloudtrail_arn" {
@@ -194,16 +194,8 @@ output "waf_regional_web_acl_arn" {
   value = try(module.waf_regional_baseline[0].web_acl_arn, null)
 }
 
-output "edge_dns_api_alias_fqdn" {
-  value = try(module.edge_dns_baseline[0].api_alias_fqdn, null)
-}
-
-output "edge_dns_frontend_alias_fqdn" {
-  value = try(module.edge_dns_baseline[0].frontend_alias_fqdn, null)
-}
-
-output "edge_dns_api_certificate_arn" {
-  value = try(module.edge_dns_baseline[0].api_certificate_arn, null)
+output "waf_cloudfront_web_acl_arn" {
+  value = try(module.waf_cloudfront_baseline[0].web_acl_arn, null)
 }
 
 output "ai_requests_log_group_name" {
@@ -276,24 +268,4 @@ output "webhook_events_dlq_arn" {
 
 output "deployment_queue_alarm_names" {
   value = try(module.deployment_messaging[0].alarm_names, [])
-}
-
-output "runner_contract" {
-  value = {
-    enabled                 = var.runner_enabled
-    launch_type             = var.runner_launch_type
-    region                  = var.aws_region
-    container_image         = var.runner_container_image
-    timeout_seconds         = var.runner_timeout_seconds
-    ephemeral_storage_gib   = var.runner_ephemeral_storage_gib
-    assign_public_ip        = var.runner_assign_public_ip
-    subnet_ids              = var.runner_subnet_ids
-    security_group_ids      = var.runner_security_group_ids
-    task_cpu                = var.runner_task_cpu
-    task_memory             = var.runner_task_memory
-    log_retention_days      = var.runner_log_retention_days
-    execution_role_name     = var.runner_execution_role_name
-    task_role_name          = var.runner_task_role_name
-    contract_schema_version = "1.0"
-  }
 }

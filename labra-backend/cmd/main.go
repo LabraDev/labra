@@ -2,9 +2,11 @@ package main
 
 import (
 	"database/sql"
+	"fmt"
 	"log"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -35,9 +37,13 @@ func main() {
 	slog.SetDefault(logger)
 
 	if cfg.GHClientID != "" && cfg.GHClientSecret != "" {
-		services.InitOauth(cfg.GHClientID, cfg.GHClientSecret)
+		services.InitOauth(cfg.GHClientID, cfg.GHClientSecret, cfg.GitHubOAuthRedirectURL)
 	} else {
 		logger.Warn("GitHub OAuth is not configured; /v1/login and /v1/callback will not work")
+	}
+
+	if err := ensureSQLiteDir(cfg.DBURL); err != nil {
+		log.Fatalf("prepare db path: %v", err)
 	}
 
 	db, err := sql.Open("sqlite3", cfg.DBURL)
@@ -46,7 +52,12 @@ func main() {
 	}
 	defer db.Close()
 
-	if err := runMigrations(db); err != nil {
+	migrationSource, err := resolveMigrationSource()
+	if err != nil {
+		log.Fatalf("resolve migrations: %v", err)
+	}
+
+	if err := runMigrations(db, migrationSource); err != nil {
 		log.Fatalf("run migrations: %v", err)
 	}
 
@@ -95,14 +106,14 @@ func main() {
 	s.Run()
 }
 
-func runMigrations(db *sql.DB) error {
+func runMigrations(db *sql.DB, migrationSource string) error {
 	driver, err := sqlite3.WithInstance(db, &sqlite3.Config{})
 	if err != nil {
 		return err
 	}
 
 	m, err := migrate.NewWithDatabaseInstance(
-		"file://../sql/migrations",
+		migrationSource,
 		"sqlite3",
 		driver,
 	)
@@ -114,4 +125,36 @@ func runMigrations(db *sql.DB) error {
 		return err
 	}
 	return nil
+}
+
+func resolveMigrationSource() (string, error) {
+	candidates := []string{
+		"../sql/migrations",
+		"./sql/migrations",
+		"/app/sql/migrations",
+	}
+
+	for _, candidate := range candidates {
+		info, err := os.Stat(candidate)
+		if err == nil && info.IsDir() {
+			return "file://" + candidate, nil
+		}
+	}
+
+	return "", fmt.Errorf("sql migrations directory not found in known paths: %s", strings.Join(candidates, ", "))
+}
+
+func ensureSQLiteDir(dbURL string) error {
+	trimmed := strings.TrimSpace(dbURL)
+	if trimmed == "" || trimmed == ":memory:" || strings.HasPrefix(trimmed, "file:") {
+		return nil
+	}
+
+	dbPath := strings.SplitN(trimmed, "?", 2)[0]
+	dir := filepath.Dir(dbPath)
+	if dir == "" || dir == "." {
+		return nil
+	}
+
+	return os.MkdirAll(dir, 0o755)
 }

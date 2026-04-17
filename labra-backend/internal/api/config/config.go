@@ -16,23 +16,24 @@ var allowedEnvironments = map[string]struct{}{
 }
 
 type Config struct {
-	Environment         string
-	Host                string
-	Port                int
-	DBURL               string
-	GHClientID          string
-	GHClientSecret      string
-	GitHubWebhookSecret string
-	JWTIssuer           string
-	JWTAudience         string
-	JWTSigningSecret    string
-	AIFeatureEnabled    bool
-	AIKillSwitchEnabled bool
-	AIPromptVersion     string
-	AIProviderModel     string
-	AIProviderTimeoutMS int
-	AIProviderRetries   int
-	LogLevel            slog.Level
+	Environment            string
+	Host                   string
+	Port                   int
+	DBURL                  string
+	GHClientID             string
+	GHClientSecret         string
+	GitHubOAuthRedirectURL string
+	GitHubWebhookSecret    string
+	JWTIssuer              string
+	JWTAudience            string
+	JWTSigningSecret       string
+	AIFeatureEnabled       bool
+	AIKillSwitchEnabled    bool
+	AIPromptVersion        string
+	AIProviderModel        string
+	AIProviderTimeoutMS    int
+	AIProviderRetries      int
+	LogLevel               slog.Level
 }
 
 func (c Config) ListenAddress() string {
@@ -122,23 +123,24 @@ func Load(getenv func(string) string) (Config, error) {
 	}
 
 	return Config{
-		Environment:         environment,
-		Host:                host,
-		Port:                port,
-		DBURL:               dbURL,
-		GHClientID:          normalize(getenv("GH_CLIENT_ID")),
-		GHClientSecret:      normalize(getenv("GH_CLIENT_SECRET")),
-		GitHubWebhookSecret: normalize(getenv("GITHUB_WEBHOOK_SECRET")),
-		JWTIssuer:           jwtIssuer,
-		JWTAudience:         jwtAudience,
-		JWTSigningSecret:    jwtSecret,
-		AIFeatureEnabled:    aiFeatureEnabled,
-		AIKillSwitchEnabled: aiKillSwitchEnabled,
-		AIPromptVersion:     aiPromptVersion,
-		AIProviderModel:     aiProviderModel,
-		AIProviderTimeoutMS: aiProviderTimeoutMS,
-		AIProviderRetries:   aiProviderRetries,
-		LogLevel:            logLevel,
+		Environment:            environment,
+		Host:                   host,
+		Port:                   port,
+		DBURL:                  dbURL,
+		GHClientID:             normalize(getenv("GH_CLIENT_ID")),
+		GHClientSecret:         normalize(getenv("GH_CLIENT_SECRET")),
+		GitHubOAuthRedirectURL: normalize(getenv("GITHUB_OAUTH_REDIRECT_URL")),
+		GitHubWebhookSecret:    normalize(getenv("GITHUB_WEBHOOK_SECRET")),
+		JWTIssuer:              jwtIssuer,
+		JWTAudience:            jwtAudience,
+		JWTSigningSecret:       jwtSecret,
+		AIFeatureEnabled:       aiFeatureEnabled,
+		AIKillSwitchEnabled:    aiKillSwitchEnabled,
+		AIPromptVersion:        aiPromptVersion,
+		AIProviderModel:        aiProviderModel,
+		AIProviderTimeoutMS:    aiProviderTimeoutMS,
+		AIProviderRetries:      aiProviderRetries,
+		LogLevel:               logLevel,
 	}, nil
 }
 

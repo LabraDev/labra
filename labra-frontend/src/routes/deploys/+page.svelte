@@ -1,19 +1,17 @@
 <section class="page">
-  <h1>Deploys</h1>
-  <p>Select an app to inspect its deployment timeline and logs.</p>
-  <a href="/apps">Go to apps</a>
+	<div class="card deploys-landing">
+		<h1>Deploys</h1>
+		<p>Select an app to inspect its deployment timeline and logs.</p>
+		<a class="button" href="/apps">Go to apps</a>
+	</div>
 </section>
 
 <style>
-  .page {
-    max-width: 720px;
-    margin: 0 auto;
-    padding: 2rem 1rem;
-    display: grid;
-    gap: 1rem;
-  }
-
-  a {
-    color: #bfd3ff;
-  }
+	.deploys-landing {
+		max-width: 700px;
+		justify-self: center;
+		display: grid;
+		gap: 0.8rem;
+		text-align: center;
+	}
 </style>

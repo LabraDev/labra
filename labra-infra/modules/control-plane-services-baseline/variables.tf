@@ -48,7 +48,7 @@ variable "webhook_ingestor_container_image" {
 
 variable "api_container_port" {
   type    = number
-  default = 80
+  default = 8080
 }
 
 variable "api_health_check_path" {
@@ -99,6 +99,21 @@ variable "execution_role_arn" {
 variable "task_role_arns" {
   type    = map(string)
   default = {}
+}
+
+variable "service_environment" {
+  type    = map(map(string))
+  default = {}
+}
+
+variable "api_efs_file_system_id" {
+  type    = string
+  default = null
+}
+
+variable "api_db_mount_path" {
+  type    = string
+  default = "/mnt/labra-db"
 }
 
 variable "tags" {

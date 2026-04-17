@@ -6,6 +6,7 @@ import (
 	"io"
 	"labra-backend/utils"
 	"net/http"
+	"strings"
 	"time"
 
 	"golang.org/x/oauth2"
@@ -21,13 +22,18 @@ type verifier struct {
 	ttl      time.Time
 }
 
-func InitOauth(gh_client, gh_secret string) {
+func InitOauth(gh_client, gh_secret, redirectURL string) {
+	redirect := strings.TrimSpace(redirectURL)
+	if redirect == "" {
+		redirect = "http://localhost:8080/v1/callback"
+	}
+
 	oauthConfig = &oauth2.Config{
 		ClientID:     gh_client,
 		ClientSecret: gh_secret,
 		Scopes:       []string{"repo", "user"},
 		Endpoint:     github.Endpoint,
-		RedirectURL:  "http://localhost:8080/v1/callback",
+		RedirectURL:  redirect,
 	}
 
 	verifiers = map[string]verifier{}

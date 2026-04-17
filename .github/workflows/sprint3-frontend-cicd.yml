@@ -45,5 +45,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: labra-frontend-dist
-          path: labra-frontend/.svelte-kit/output
+          path: labra-frontend/build
           if-no-files-found: error

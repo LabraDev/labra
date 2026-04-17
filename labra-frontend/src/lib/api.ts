@@ -111,7 +111,7 @@ export type AuthSessionResponse = {
 	};
 };
 
-export const backendBaseURL = import.meta.env.VITE_BACKEND_BASE_URL ?? '/api';
+export const backendBaseURL = import.meta.env.VITE_BACKEND_BASE_URL ?? '';
 const SESSION_TOKEN_KEY = 'labra_session_token';
 
 export function getSessionToken(): string {

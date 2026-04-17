@@ -26,6 +26,31 @@ variable "bucket_name" {
   default = null
 }
 
+variable "cloudfront_web_acl_arn" {
+  type    = string
+  default = null
+}
+
+variable "api_origin_domain_name" {
+  type    = string
+  default = null
+}
+
+variable "api_origin_path_pattern" {
+  type    = string
+  default = "/v1/*"
+}
+
+variable "api_origin_protocol_policy" {
+  type    = string
+  default = "http-only"
+
+  validation {
+    condition     = contains(["http-only", "https-only", "match-viewer"], var.api_origin_protocol_policy)
+    error_message = "api_origin_protocol_policy must be http-only, https-only, or match-viewer."
+  }
+}
+
 variable "default_root_object" {
   type    = string
   default = "index.html"

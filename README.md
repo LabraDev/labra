@@ -13,6 +13,41 @@ Labra is organized as a monorepo:
 - `labra-infra/`: Terraform modules and environment composition for AWS
   infrastructure plus customer onboarding assets.
 
+## Demo Day From Zero (Recommended)
+
+If you have only coded the project and have not configured anything external yet,
+and want a cloud-first demo (no localhost dependency in main flow):
+
+1. Configure AWS CLI credentials:
+
+```bash
+aws configure
+aws sts get-caller-identity
+```
+
+2. Provision/update platform infrastructure:
+
+```bash
+./cloud-up.sh --yes
+```
+
+3. Run cloud demo readiness checks:
+
+```bash
+./cloud-demo-checklist.sh --skip-infra --require-api
+```
+
+4. Open cloud endpoints from Terraform outputs:
+
+```bash
+terraform -chdir=labra-infra/env/dev output -raw static_site_url
+terraform -chdir=labra-infra/env/dev output -raw control_plane_alb_dns_name
+terraform -chdir=labra-infra/env/dev output -raw control_api_db_filesystem_id
+```
+
+For the complete cloud-first runbook, fallback options, and troubleshooting, see
+[DEMO_DAY.md](DEMO_DAY.md).
+
 ## Backend Setup Run and Test
 
 From repo root:
@@ -97,6 +132,26 @@ AWS_EC2_METADATA_DISABLED=true terraform -chdir=labra-infra/env/dev plan -input=
 AWS_EC2_METADATA_DISABLED=true terraform -chdir=labra-infra/env/dev apply -input=false
 ```
 
+One-command baseline infra automation:
+
+```bash
+./infra-up.sh --yes
+```
+
+This script auto-generates `backend.hcl` (if missing), bootstraps state
+resources when needed, initializes remote backend, and runs validate/plan/apply.
+
+One-command full cloud deployment automation (recommended for final demo):
+
+```bash
+./cloud-up.sh --yes
+```
+
+This script provisions infra, builds and pushes backend images to ECR, enables
+cloud API services, deploys frontend assets to S3, invalidates CloudFront, and
+verifies cloud endpoints with persistent EFS-backed SQLite storage for the API
+and Terraform-managed WAF on both ALB and CloudFront.
+
 For complete Terraform-managed coverage, manual exceptions, and rollout steps,
 see [AWS_TERRAFORM_FIRST_PLAN.md](AWS_TERRAFORM_FIRST_PLAN.md).
 
@@ -140,19 +195,19 @@ Phase 4 behavior:
 Webhook config summary:
 
 1. In GitHub repo: `Settings -> Webhooks -> Add webhook`.
-2. Payload URL: `http://<your-public-url>/v1/webhooks/github`.
+2. Payload URL: `https://<your-cloudfront-domain>/v1/webhooks/github`.
 3. Content type: `application/json`.
 4. Secret: exactly matches `GITHUB_WEBHOOK_SECRET`.
 5. Events: `Just the push event`.
 
-Local replay:
+Cloud replay:
 
 ```bash
 SECRET='replace-with-long-random-secret'
 PAYLOAD='{"ref":"refs/heads/main","after":"abc123def456","repository":{"full_name":"owner/repo"},"head_commit":{"id":"abc123def456","message":"feat: update","author":{"name":"Casey"}}}'
 SIG=$(printf '%s' "$PAYLOAD" | openssl dgst -sha256 -hmac "$SECRET" | sed 's/^.* //')
 
-curl -i http://localhost:8080/v1/webhooks/github \
+curl -i https://<your-cloudfront-domain>/v1/webhooks/github \
   -H "Content-Type: application/json" \
   -H "X-GitHub-Event: push" \
   -H "X-GitHub-Delivery: local-replay-1" \
@@ -195,9 +250,9 @@ Safety controls:
 Example request:
 
 ```bash
-curl -sS -X POST http://localhost:8080/v1/ai/deploy-insights \
+curl -sS -X POST https://<your-cloudfront-domain>/v1/ai/deploy-insights \
   -H 'Content-Type: application/json' \
-  -H 'X-User-ID: 1' \
+  -H 'Authorization: Bearer <SESSION_TOKEN>' \
   -d '{"deployment_id": 10, "prompt": "why did deploy fail?", "bypass_ai": false}'
 ```
 
@@ -220,7 +275,7 @@ Operational review commands:
 cd labra-backend && go test ./...
 cd labra-frontend && npm run check && node --test tests/*.test.mjs
 AWS_EC2_METADATA_DISABLED=true terraform -chdir=labra-infra/env/dev validate
-curl -sS http://localhost:8080/v1/system/readiness-checklist -H 'X-User-ID: 1'
+curl -sS https://<your-cloudfront-domain>/v1/system/readiness-checklist -H 'Authorization: Bearer <SESSION_TOKEN>'
 ```
 
 ## Notes
