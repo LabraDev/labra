@@ -11,13 +11,15 @@ const deployDetailsSource = readFileSync('src/routes/deploys/[id]/+page.svelte',
 
 test('layout composes header and footer shell', () => {
   assert.equal(layoutSource.includes('<Header />'), true, 'layout should render Header');
-  assert.equal(layoutSource.includes('<Footer />'), true, 'layout should render Footer');
+  assert.equal(layoutSource.includes('{#if isAuthenticated}'), true, 'layout should gate header by auth state');
+  assert.equal(layoutSource.includes('<Footer />'), false, 'layout should not render Footer');
 });
 
-test('header exposes sprint 1 nav and environment indicator', () => {
+test('header exposes sprint 1 nav and login controls', () => {
   assert.equal(headerSource.includes('/dashboard'), true, 'header should link to dashboard');
   assert.equal(headerSource.includes('/settings'), true, 'header should link to settings');
-  assert.equal(headerSource.includes('Env:'), true, 'header should render environment indicator');
+  assert.equal(headerSource.includes('{#if isAuthenticated}'), true, 'header nav should only show when authenticated');
+  assert.equal(headerSource.includes('<GithubLoginButton />'), false, 'header should not render GitHub login button');
 });
 
 test('sprint 2 auth and aws settings UI exists', () => {

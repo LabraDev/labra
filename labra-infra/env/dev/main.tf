@@ -31,6 +31,15 @@ locals {
   resource_prefix              = "${var.project_name}-${var.environment}${local.component_suffix}"
   control_api_db_mount_path    = trimspace(var.control_api_db_mount_path)
   control_api_effective_db_url = trimspace(var.control_api_db_url) != "" ? trimspace(var.control_api_db_url) : "${local.control_api_db_mount_path}/labra.db"
+  control_api_oauth_secret_arn = trimspace(var.control_api_oauth_secret_arn) != "" ? trimspace(var.control_api_oauth_secret_arn) : trimspace(try(module.secrets_baseline[0].platform_secret_arn, ""))
+  control_api_oauth_secrets = local.control_api_oauth_secret_arn == "" ? {} : {
+    GH_CLIENT_ID           = "${local.control_api_oauth_secret_arn}:${trimspace(var.control_api_github_client_id_secret_key)}::"
+    GH_CLIENT_SECRET       = "${local.control_api_oauth_secret_arn}:${trimspace(var.control_api_github_client_secret_secret_key)}::"
+    GH_APP_ID              = "${local.control_api_oauth_secret_arn}:${trimspace(var.control_api_github_app_id_secret_key)}::"
+    GH_APP_SLUG            = "${local.control_api_oauth_secret_arn}:${trimspace(var.control_api_github_app_slug_secret_key)}::"
+    GH_APP_PRIVATE_KEY_PEM = "${local.control_api_oauth_secret_arn}:${trimspace(var.control_api_github_app_private_key_secret_key)}::"
+    GITHUB_WEBHOOK_SECRET  = "${local.control_api_oauth_secret_arn}:${trimspace(var.control_api_github_webhook_secret_secret_key)}::"
+  }
   tags = merge({
     Project      = var.project_name
     Environment  = var.environment
@@ -186,7 +195,7 @@ module "control_plane_services_baseline" {
   api_efs_file_system_id              = var.enable_control_api_db_storage ? try(module.control_api_db_storage[0].file_system_id, null) : null
   api_db_mount_path                   = local.control_api_db_mount_path
   service_environment = {
-    "control-api" = {
+    "control-api" = merge({
       APP_ENV                   = var.control_api_app_env
       API_HOST                  = var.control_api_host
       API_PORT                  = tostring(var.control_api_container_port)
@@ -194,14 +203,19 @@ module "control_plane_services_baseline" {
       JWT_ISSUER                = var.control_api_jwt_issuer
       JWT_AUDIENCE              = var.control_api_jwt_audience
       JWT_SIGNING_SECRET        = var.control_api_jwt_signing_secret
-      GITHUB_WEBHOOK_SECRET     = var.control_api_github_webhook_secret
       GITHUB_OAUTH_REDIRECT_URL = var.control_api_github_oauth_redirect_url
       AI_PROMPT_VERSION         = var.control_api_ai_prompt_version
       AI_PROVIDER_MODEL         = var.control_api_ai_provider_model
       AI_FEATURE_ENABLED        = tostring(var.ai_feature_enabled)
       AI_KILL_SWITCH_ENABLED    = tostring(var.ai_kill_switch_enabled)
-    }
+    }, local.control_api_oauth_secret_arn == "" ? {
+      GITHUB_WEBHOOK_SECRET = var.control_api_github_webhook_secret
+    } : {})
   }
+  service_secrets = {
+    "control-api" = local.control_api_oauth_secrets
+  }
+  secret_read_arns = local.control_api_oauth_secret_arn == "" ? [] : [local.control_api_oauth_secret_arn]
   task_role_arns = {
     "control-api"         = try(module.iam_baseline[0].backend_service_role_arn, "")
     "deploy-orchestrator" = try(module.iam_baseline[0].deploy_runner_role_arn, "")

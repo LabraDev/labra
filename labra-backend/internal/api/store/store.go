@@ -100,6 +100,114 @@ func (s *Store) UpdateAppForUser(ctx context.Context, appID, userID int64, in Up
 	return app, nil
 }
 
+func (s *Store) DeleteAppForUser(ctx context.Context, appID, userID int64) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			_ = tx.Rollback()
+		}
+	}()
+
+	deploymentIDs := make([]int64, 0)
+	rows, err := tx.QueryContext(ctx, `
+		SELECT id
+		FROM deployments
+		WHERE app_id = ? AND user_id = ?
+	`, appID, userID)
+	if err != nil {
+		return err
+	}
+	for rows.Next() {
+		var depID int64
+		if scanErr := rows.Scan(&depID); scanErr != nil {
+			_ = rows.Close()
+			err = scanErr
+			return err
+		}
+		deploymentIDs = append(deploymentIDs, depID)
+	}
+	if rowsErr := rows.Err(); rowsErr != nil {
+		_ = rows.Close()
+		err = rowsErr
+		return err
+	}
+	_ = rows.Close()
+
+	for _, depID := range deploymentIDs {
+		if _, err = tx.ExecContext(ctx, `
+			DELETE FROM deployment_logs
+			WHERE deployment_id = ?
+		`, depID); err != nil {
+			return err
+		}
+		if _, err = tx.ExecContext(ctx, `
+			DELETE FROM ai_request_logs
+			WHERE deployment_id = ?
+		`, depID); err != nil {
+			// Some older schemas may not include ai_request_logs yet.
+			if !strings.Contains(strings.ToLower(err.Error()), "no such table") {
+				return err
+			}
+		}
+	}
+
+	if _, err = tx.ExecContext(ctx, `
+		DELETE FROM deployments
+		WHERE app_id = ? AND user_id = ?
+	`, appID, userID); err != nil {
+		return err
+	}
+
+	if _, err = tx.ExecContext(ctx, `
+		DELETE FROM webhook_deliveries
+		WHERE app_id = ?
+	`, appID); err != nil {
+		// Some older schemas may not include webhook_deliveries yet.
+		if !strings.Contains(strings.ToLower(err.Error()), "no such table") {
+			return err
+		}
+	}
+
+	if _, err = tx.ExecContext(ctx, `
+		DELETE FROM app_config_versions
+		WHERE app_id = ? AND user_id = ?
+	`, appID, userID); err != nil {
+		return err
+	}
+
+	if _, err = tx.ExecContext(ctx, `
+		DELETE FROM app_infra_outputs
+		WHERE app_id = ? AND user_id = ?
+	`, appID, userID); err != nil {
+		return err
+	}
+
+	res, err := tx.ExecContext(ctx, `
+		DELETE FROM apps
+		WHERE id = ? AND user_id = ?
+	`, appID, userID)
+	if err != nil {
+		return err
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return ErrNotFound
+	}
+
+	err = tx.Commit()
+	if err == nil {
+		committed = true
+	}
+	return err
+}
+
 func (s *Store) CreateAppConfigVersion(ctx context.Context, in CreateAppConfigVersionInput) (AppConfigVersion, error) {
 	row := s.db.QueryRowContext(ctx, `
 		INSERT INTO app_config_versions (app_id, user_id, source, config_json, created_at)
@@ -455,6 +563,21 @@ func (s *Store) ListAWSConnectionsByUser(ctx context.Context, userID int64) ([]A
 	return out, rows.Err()
 }
 
+func (s *Store) DeleteAWSConnectionForUser(ctx context.Context, connectionID, userID int64) (bool, error) {
+	res, err := s.db.ExecContext(ctx, `
+		DELETE FROM aws_connections
+		WHERE id = ? AND user_id = ?
+	`, connectionID, userID)
+	if err != nil {
+		return false, err
+	}
+	rows, err := res.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	return rows > 0, nil
+}
+
 func (s *Store) CreateAuditEvent(ctx context.Context, in AuditEventInput) error {
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO audit_events (
@@ -520,18 +643,118 @@ func (s *Store) GetPlatformUserByIdentity(ctx context.Context, provider, subject
 
 func (s *Store) UpsertAuthIdentity(ctx context.Context, in UpsertAuthIdentityInput) (AuthIdentity, error) {
 	row := s.db.QueryRowContext(ctx, `
-		INSERT INTO auth_identities (user_id, provider, subject, email, created_at, updated_at)
-		VALUES (?, ?, ?, ?, unixepoch(), unixepoch())
+		INSERT INTO auth_identities (
+			user_id, provider, subject, email, access_token, token_updated_at, created_at, updated_at
+		)
+		VALUES (?, ?, ?, ?, ?, CASE WHEN ? IS NULL THEN NULL ELSE unixepoch() END, unixepoch(), unixepoch())
 		ON CONFLICT(provider, subject) DO UPDATE SET
 			user_id = excluded.user_id,
 			email = excluded.email,
+			access_token = COALESCE(excluded.access_token, auth_identities.access_token),
+			token_updated_at = CASE
+				WHEN excluded.access_token IS NULL THEN auth_identities.token_updated_at
+				ELSE unixepoch()
+			END,
 			updated_at = unixepoch()
-		RETURNING id, user_id, provider, subject, COALESCE(email, ''), created_at, updated_at
-	`, in.UserID, strings.TrimSpace(in.Provider), strings.TrimSpace(in.Subject), nullIfEmpty(in.Email))
+		RETURNING id, user_id, provider, subject, COALESCE(email, ''), COALESCE(access_token, ''), COALESCE(token_updated_at, 0), created_at, updated_at
+	`, in.UserID, strings.TrimSpace(in.Provider), strings.TrimSpace(in.Subject), nullIfEmpty(in.Email), nullIfEmpty(in.AccessToken), nullIfEmpty(in.AccessToken))
 
 	var out AuthIdentity
-	if err := row.Scan(&out.ID, &out.UserID, &out.Provider, &out.Subject, &out.Email, &out.CreatedAt, &out.UpdatedAt); err != nil {
+	if err := row.Scan(
+		&out.ID,
+		&out.UserID,
+		&out.Provider,
+		&out.Subject,
+		&out.Email,
+		&out.AccessToken,
+		&out.TokenUpdatedAt,
+		&out.CreatedAt,
+		&out.UpdatedAt,
+	); err != nil {
 		return AuthIdentity{}, err
+	}
+	return out, nil
+}
+
+func (s *Store) GetAuthIdentityByUserProvider(ctx context.Context, userID int64, provider string) (AuthIdentity, error) {
+	row := s.db.QueryRowContext(ctx, `
+		SELECT id, user_id, provider, subject, COALESCE(email, ''), COALESCE(access_token, ''), COALESCE(token_updated_at, 0), created_at, updated_at
+		FROM auth_identities
+		WHERE user_id = ? AND provider = ?
+		ORDER BY updated_at DESC, id DESC
+		LIMIT 1
+	`, userID, strings.TrimSpace(provider))
+
+	var out AuthIdentity
+	if err := row.Scan(
+		&out.ID,
+		&out.UserID,
+		&out.Provider,
+		&out.Subject,
+		&out.Email,
+		&out.AccessToken,
+		&out.TokenUpdatedAt,
+		&out.CreatedAt,
+		&out.UpdatedAt,
+	); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return AuthIdentity{}, ErrNotFound
+		}
+		return AuthIdentity{}, err
+	}
+	return out, nil
+}
+
+func (s *Store) UpsertGitHubInstallation(ctx context.Context, in UpsertGitHubInstallationInput) (GitHubInstallation, error) {
+	row := s.db.QueryRowContext(ctx, `
+		INSERT INTO github_installations (
+			user_id, installation_id, account_login, target_type, created_at, updated_at
+		)
+		VALUES (?, ?, ?, ?, unixepoch(), unixepoch())
+		ON CONFLICT(user_id) DO UPDATE SET
+			installation_id = excluded.installation_id,
+			account_login = excluded.account_login,
+			target_type = excluded.target_type,
+			updated_at = unixepoch()
+		RETURNING id, user_id, installation_id, COALESCE(account_login, ''), COALESCE(target_type, ''), created_at, updated_at
+	`, in.UserID, in.InstallationID, nullIfEmpty(in.AccountLogin), nullIfEmpty(in.TargetType))
+
+	var out GitHubInstallation
+	if err := row.Scan(
+		&out.ID,
+		&out.UserID,
+		&out.InstallationID,
+		&out.AccountLogin,
+		&out.TargetType,
+		&out.CreatedAt,
+		&out.UpdatedAt,
+	); err != nil {
+		return GitHubInstallation{}, err
+	}
+	return out, nil
+}
+
+func (s *Store) GetGitHubInstallationByUserID(ctx context.Context, userID int64) (GitHubInstallation, error) {
+	row := s.db.QueryRowContext(ctx, `
+		SELECT id, user_id, installation_id, COALESCE(account_login, ''), COALESCE(target_type, ''), created_at, updated_at
+		FROM github_installations
+		WHERE user_id = ?
+	`, userID)
+
+	var out GitHubInstallation
+	if err := row.Scan(
+		&out.ID,
+		&out.UserID,
+		&out.InstallationID,
+		&out.AccountLogin,
+		&out.TargetType,
+		&out.CreatedAt,
+		&out.UpdatedAt,
+	); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return GitHubInstallation{}, ErrNotFound
+		}
+		return GitHubInstallation{}, err
 	}
 	return out, nil
 }

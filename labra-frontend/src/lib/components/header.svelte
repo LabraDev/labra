@@ -1,29 +1,53 @@
 <script>
-	import GithubLoginButton from '$lib/components/githublogin.svelte';
+	import { goto } from '$app/navigation';
+	import { onMount } from 'svelte';
+	import { clearSessionToken, getSessionToken, logout } from '$lib/api';
 
-	const appEnv = import.meta.env.PUBLIC_APP_ENV ?? 'local';
+	let isAuthenticated = false;
+	let logoutBusy = false;
+
+	function syncAuthState() {
+		isAuthenticated = getSessionToken().trim().length > 0;
+	}
+
+	async function handleLogout() {
+		if (logoutBusy) return;
+		logoutBusy = true;
+		try {
+			await logout();
+		} catch {
+			// Always clear local state; server session may already be expired/revoked.
+			clearSessionToken();
+		} finally {
+			syncAuthState();
+			logoutBusy = false;
+			void goto('/');
+		}
+	}
+
+	onMount(() => {
+		syncAuthState();
+		window.addEventListener('storage', syncAuthState);
+		return () => window.removeEventListener('storage', syncAuthState);
+	});
 </script>
 
 <header class="shell-header">
 	<div class="brand-block">
 		<a id="logo" href="/">LABRA</a>
-		<p class="tagline">Cloud Deploy Control Plane</p>
 	</div>
 
-	<nav aria-label="Primary">
-		<a href="/dashboard">Dashboard</a>
-		<a href="/apps">Apps</a>
-		<a href="/deploys">Deploys</a>
-		<a href="/settings">Settings</a>
-		<a href="/login">Login</a>
-	</nav>
-
-	<div class="meta">
-		<span class="env">Env: {appEnv}</span>
-		<div class="login-wrap">
-			<GithubLoginButton />
-		</div>
-	</div>
+	{#if isAuthenticated}
+		<nav aria-label="Primary">
+			<a href="/dashboard">Dashboard</a>
+			<a href="/apps">Apps</a>
+			<a href="/deploys">Deploys</a>
+			<a href="/settings">AWS Access</a>
+			<button type="button" class="logout" on:click={handleLogout} disabled={logoutBusy}>
+				{logoutBusy ? 'Signing out...' : 'Logout'}
+			</button>
+		</nav>
+	{/if}
 </header>
 
 <style>
@@ -32,41 +56,52 @@
 		top: 0;
 		z-index: 30;
 		display: grid;
-		grid-template-columns: auto 1fr auto;
+		grid-template-columns: auto 1fr;
 		align-items: center;
 		gap: 1rem;
-		padding: 0.85rem 1rem;
+		padding: 0.82rem 1rem;
 		border-bottom: 1px solid rgba(183, 189, 248, 0.18);
 		background: linear-gradient(170deg, rgba(24, 25, 38, 0.95), rgba(30, 32, 48, 0.84));
 		backdrop-filter: blur(8px);
 	}
 
 	.brand-block {
-		display: grid;
-		gap: 0.05rem;
+		display: inline-flex;
+		align-items: center;
 	}
 
 	#logo {
-		font-size: clamp(1.2rem, 2.1vw, 1.55rem);
-		font-weight: 700;
-		letter-spacing: 0.08em;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		padding: 0.36rem 0.78rem;
+		font-size: clamp(1.62rem, 2.95vw, 2.2rem);
+		font-weight: 800;
+		letter-spacing: 0.1em;
+		line-height: 1;
 		text-decoration: none;
-		color: var(--rosewater);
+		color: transparent;
+		background: linear-gradient(135deg, var(--blue) 8%, var(--lavender) 48%, var(--sky) 88%);
+		-webkit-background-clip: text;
+		background-clip: text;
+		text-shadow: 0 0 14px rgba(138, 173, 244, 0.22);
+		transition: transform 120ms ease, filter 120ms ease;
 	}
 
-	.tagline {
-		font-size: 0.76rem;
-		opacity: 0.72;
+	#logo:hover {
+		transform: translateY(-1px);
+		filter: saturate(1.12);
 	}
 
 	nav {
 		display: flex;
 		flex-wrap: wrap;
-		justify-content: center;
+		justify-content: flex-end;
 		gap: 0.5rem;
 	}
 
-	nav a {
+	nav a,
+	nav .logout {
 		text-decoration: none;
 		padding: 0.45rem 0.68rem;
 		border: 1px solid rgba(138, 173, 244, 0.24);
@@ -78,31 +113,24 @@
 		transition: transform 120ms ease, border-color 120ms ease, background-color 120ms ease;
 	}
 
-	nav a:hover {
+	nav a:hover,
+	nav .logout:hover:enabled {
 		transform: translateY(-1px);
 		border-color: rgba(139, 213, 202, 0.55);
 		background: rgba(36, 39, 58, 0.95);
 	}
 
-	.meta {
-		display: flex;
-		align-items: center;
-		gap: 0.55rem;
+	nav .logout {
+		cursor: pointer;
+		font-family: inherit;
+		line-height: 1.2;
+		box-shadow: none;
+		appearance: none;
 	}
 
-	.env {
-		font-size: 0.82rem;
-		font-weight: 600;
-		padding: 0.34rem 0.56rem;
-		border: 1px solid rgba(244, 219, 214, 0.3);
-		border-radius: 999px;
-		color: var(--rosewater);
-		background: rgba(24, 25, 38, 0.74);
-	}
-
-	.login-wrap {
-		display: flex;
-		align-items: center;
+	nav .logout:disabled {
+		opacity: 0.72;
+		cursor: wait;
 	}
 
 	@media (max-width: 940px) {
@@ -112,8 +140,7 @@
 			padding-bottom: 0.9rem;
 		}
 
-		nav,
-		.meta {
+		nav {
 			justify-content: center;
 		}
 	}

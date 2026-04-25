@@ -9,4 +9,5 @@ import (
 func AWSConnections(s *fuego.Server) {
 	fuego.PostStd(s, "/v1/aws-connections", withAuth(handlers.UpsertAWSConnectionHandler))
 	fuego.GetStd(s, "/v1/aws-connections", withAuth(handlers.ListAWSConnectionsHandler))
+	fuego.DeleteStd(s, "/v1/aws-connections/{id}", withAuth(handlers.DeleteAWSConnectionHandler))
 }

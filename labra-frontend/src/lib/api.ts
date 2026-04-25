@@ -113,6 +113,17 @@ export type AuthSessionResponse = {
 
 export const backendBaseURL = import.meta.env.VITE_BACKEND_BASE_URL ?? '';
 const SESSION_TOKEN_KEY = 'labra_session_token';
+const POST_LOGIN_REDIRECT_KEY = 'labra_post_login_redirect';
+
+export class APIError extends Error {
+	status: number;
+
+	constructor(message: string, status: number) {
+		super(message);
+		this.name = 'APIError';
+		this.status = status;
+	}
+}
 
 export function getSessionToken(): string {
 	if (typeof window === 'undefined') return '';
@@ -127,6 +138,24 @@ export function setSessionToken(token: string): void {
 export function clearSessionToken(): void {
 	if (typeof window === 'undefined') return;
 	window.localStorage.removeItem(SESSION_TOKEN_KEY);
+}
+
+export function setPostLoginRedirect(path: string): void {
+	if (typeof window === 'undefined') return;
+	const trimmed = path.trim();
+	if (!trimmed.startsWith('/')) return;
+	window.localStorage.setItem(POST_LOGIN_REDIRECT_KEY, trimmed);
+}
+
+export function consumePostLoginRedirect(defaultPath = '/dashboard'): string {
+	if (typeof window === 'undefined') return defaultPath;
+	const raw = window.localStorage.getItem(POST_LOGIN_REDIRECT_KEY) ?? '';
+	window.localStorage.removeItem(POST_LOGIN_REDIRECT_KEY);
+	const trimmed = raw.trim();
+	if (trimmed.startsWith('/')) {
+		return trimmed;
+	}
+	return defaultPath;
 }
 
 function buildHeaders(extra?: Record<string, string>, userID?: string): HeadersInit {
@@ -146,16 +175,50 @@ function buildHeaders(extra?: Record<string, string>, userID?: string): HeadersI
 
 async function parseOrThrow<T>(res: Response): Promise<T> {
 	if (!res.ok) {
-		let detail = `request failed (${res.status})`;
+		let detail = `Request failed (${res.status})`;
+		if (res.status === 401) {
+			detail = 'You are not logged in yet. Open /login to create a session, then refresh.';
+		} else if (res.status === 403) {
+			detail = 'You are logged in, but your account does not have access to this action.';
+		}
+
 		try {
-			const body = await res.json();
-			detail = body?.error?.message ?? detail;
+			const raw = await res.text();
+			if (raw.trim().length > 0) {
+				try {
+					const body = JSON.parse(raw);
+					detail = body?.error?.message ?? body?.message ?? body?.detail ?? detail;
+				} catch {
+					detail = raw.trim();
+				}
+			}
 		} catch {
 			// keep fallback
 		}
-		throw new Error(detail);
+
+		if (res.status === 401) {
+			detail = 'You are not logged in yet. Open /login to create a session, then refresh.';
+			clearSessionToken();
+		}
+
+		throw new APIError(detail, res.status);
 	}
-	return (await res.json()) as T;
+
+	const contentType = res.headers.get('content-type')?.toLowerCase() ?? '';
+	const raw = await res.text();
+	if (raw.trim().length === 0) {
+		return {} as T;
+	}
+
+	if (!contentType.includes('application/json')) {
+		throw new APIError('Server returned an unexpected response format. Refresh and try again.', res.status);
+	}
+
+	try {
+		return JSON.parse(raw) as T;
+	} catch {
+		throw new APIError('Server returned malformed JSON. Refresh and try again.', res.status);
+	}
 }
 
 export async function apiGET<T>(path: string, userID?: string): Promise<T> {
@@ -189,6 +252,18 @@ export async function apiPATCH<T>(
 		method: 'PATCH',
 		headers: buildHeaders(headers, userID),
 		body: JSON.stringify(body)
+	});
+	return parseOrThrow<T>(res);
+}
+
+export async function apiDELETE<T>(
+	path: string,
+	headers?: Record<string, string>,
+	userID?: string
+): Promise<T> {
+	const res = await fetch(`${backendBaseURL}${path}`, {
+		method: 'DELETE',
+		headers: buildHeaders(headers, userID)
 	});
 	return parseOrThrow<T>(res);
 }

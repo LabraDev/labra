@@ -71,6 +71,32 @@ func TestSprint1ReadinessAndAWSConnectionsFlow(t *testing.T) {
 		if body.Connections[0].AccountID != "123456789012" {
 			t.Fatalf("expected derived account ID, got %q", body.Connections[0].AccountID)
 		}
+
+		deleteReq := httptest.NewRequest(http.MethodDelete, "/v1/aws-connections/1", nil)
+		deleteReq.Header.Set("X-User-ID", "7")
+		deleteRR := httptest.NewRecorder()
+		DeleteAWSConnectionHandler(deleteRR, deleteReq)
+		if deleteRR.Code != http.StatusNoContent {
+			t.Fatalf("expected 204, got %d, body=%s", deleteRR.Code, deleteRR.Body.String())
+		}
+
+		listAfterDeleteReq := httptest.NewRequest(http.MethodGet, "/v1/aws-connections", nil)
+		listAfterDeleteReq.Header.Set("X-User-ID", "7")
+		listAfterDeleteRR := httptest.NewRecorder()
+		ListAWSConnectionsHandler(listAfterDeleteRR, listAfterDeleteReq)
+		if listAfterDeleteRR.Code != http.StatusOK {
+			t.Fatalf("expected 200 after delete, got %d, body=%s", listAfterDeleteRR.Code, listAfterDeleteRR.Body.String())
+		}
+
+		var afterDelete struct {
+			Connections []struct{} `json:"aws_connections"`
+		}
+		if err := json.Unmarshal(listAfterDeleteRR.Body.Bytes(), &afterDelete); err != nil {
+			t.Fatalf("unmarshal list after delete response: %v", err)
+		}
+		if len(afterDelete.Connections) != 0 {
+			t.Fatalf("expected 0 connections after delete, got %d", len(afterDelete.Connections))
+		}
 	})
 
 	t.Run("invalid role arn returns bad request", func(t *testing.T) {

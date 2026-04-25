@@ -181,15 +181,24 @@ func PostLogoutHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func provisionPlatformUser(r *http.Request, p auth.Principal) (store.PlatformUser, bool, error) {
-	const provider = "cognito"
+	return provisionPlatformUserWithProvider(r, p, "cognito", "")
+}
 
-	user, err := appStore.GetPlatformUserByIdentity(r.Context(), provider, p.Sub)
+func provisionPlatformUserWithProvider(r *http.Request, p auth.Principal, provider, accessToken string) (store.PlatformUser, bool, error) {
+	safeProvider := strings.TrimSpace(provider)
+	if safeProvider == "" {
+		safeProvider = "cognito"
+	}
+	safeAccessToken := strings.TrimSpace(accessToken)
+
+	user, err := appStore.GetPlatformUserByIdentity(r.Context(), safeProvider, p.Sub)
 	if err == nil {
 		_, _ = appStore.UpsertAuthIdentity(r.Context(), store.UpsertAuthIdentityInput{
-			UserID:   user.ID,
-			Provider: provider,
-			Subject:  p.Sub,
-			Email:    p.Email,
+			UserID:      user.ID,
+			Provider:    safeProvider,
+			Subject:     p.Sub,
+			Email:       p.Email,
+			AccessToken: safeAccessToken,
 		})
 		return user, false, nil
 	}
@@ -206,10 +215,11 @@ func provisionPlatformUser(r *http.Request, p auth.Principal) (store.PlatformUse
 	}
 
 	_, err = appStore.UpsertAuthIdentity(r.Context(), store.UpsertAuthIdentityInput{
-		UserID:   user.ID,
-		Provider: provider,
-		Subject:  p.Sub,
-		Email:    p.Email,
+		UserID:      user.ID,
+		Provider:    safeProvider,
+		Subject:     p.Sub,
+		Email:       p.Email,
+		AccessToken: safeAccessToken,
 	})
 	if err != nil {
 		return store.PlatformUser{}, false, err
@@ -222,7 +232,7 @@ func provisionPlatformUser(r *http.Request, p auth.Principal) (store.PlatformUse
 		TargetID:    strings.TrimSpace(p.Sub),
 		Status:      "success",
 		Message:     "new platform user provisioned",
-		Metadata:    "{\"provider\":\"cognito\"}",
+		Metadata:    "{\"provider\":\"" + safeProvider + "\"}",
 	})
 
 	return user, true, nil

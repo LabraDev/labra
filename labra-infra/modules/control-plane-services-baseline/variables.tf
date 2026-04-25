@@ -91,7 +91,7 @@ variable "execution_role_arn" {
   default = null
 
   validation {
-    condition     = var.create_execution_role || trimspace(coalesce(var.execution_role_arn, "")) != ""
+    condition     = var.create_execution_role || trimspace(var.execution_role_arn == null ? "" : var.execution_role_arn) != ""
     error_message = "execution_role_arn must be set when create_execution_role is false."
   }
 }
@@ -104,6 +104,16 @@ variable "task_role_arns" {
 variable "service_environment" {
   type    = map(map(string))
   default = {}
+}
+
+variable "service_secrets" {
+  type    = map(map(string))
+  default = {}
+}
+
+variable "secret_read_arns" {
+  type    = list(string)
+  default = []
 }
 
 variable "api_efs_file_system_id" {

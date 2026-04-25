@@ -160,6 +160,8 @@ func setupSprint2TestDB(t *testing.T) *sql.DB {
 	  provider TEXT NOT NULL,
 	  subject TEXT NOT NULL,
 	  email TEXT,
+	  access_token TEXT,
+	  token_updated_at INTEGER,
 	  created_at INTEGER NOT NULL DEFAULT (unixepoch()),
 	  updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
 	  UNIQUE(provider, subject)

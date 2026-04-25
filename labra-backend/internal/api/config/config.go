@@ -22,6 +22,9 @@ type Config struct {
 	DBURL                  string
 	GHClientID             string
 	GHClientSecret         string
+	GHAppID                string
+	GHAppPrivateKeyPEM     string
+	GHAppSlug              string
 	GitHubOAuthRedirectURL string
 	GitHubWebhookSecret    string
 	JWTIssuer              string
@@ -129,6 +132,9 @@ func Load(getenv func(string) string) (Config, error) {
 		DBURL:                  dbURL,
 		GHClientID:             normalize(getenv("GH_CLIENT_ID")),
 		GHClientSecret:         normalize(getenv("GH_CLIENT_SECRET")),
+		GHAppID:                normalize(getenv("GH_APP_ID")),
+		GHAppPrivateKeyPEM:     normalize(getenv("GH_APP_PRIVATE_KEY_PEM")),
+		GHAppSlug:              normalize(getenv("GH_APP_SLUG")),
 		GitHubOAuthRedirectURL: normalize(getenv("GITHUB_OAUTH_REDIRECT_URL")),
 		GitHubWebhookSecret:    normalize(getenv("GITHUB_WEBHOOK_SECRET")),
 		JWTIssuer:              jwtIssuer,

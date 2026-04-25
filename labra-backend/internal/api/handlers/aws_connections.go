@@ -68,13 +68,13 @@ func UpsertAWSConnectionHandler(w http.ResponseWriter, r *http.Request) {
 		Region:     normalized.Region,
 	})
 	if err != nil {
-		writeJSONError(w, http.StatusBadRequest, "unable to validate AssumeRole configuration")
+		writeJSONError(w, http.StatusBadRequest, fmt.Sprintf("unable to validate AssumeRole configuration: %v", err))
 		_ = appStore.CreateAuditEvent(r.Context(), store.AuditEventInput{
 			ActorUserID: userID,
 			EventType:   "aws_connection.assume_role_verify",
 			TargetType:  "aws_connection",
 			Status:      "failed",
-			Message:     "unable to validate AssumeRole configuration",
+			Message:     err.Error(),
 		})
 		return
 	}
@@ -146,6 +146,46 @@ func ListAWSConnectionsHandler(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"aws_connections": connections,
 	})
+}
+
+func DeleteAWSConnectionHandler(w http.ResponseWriter, r *http.Request) {
+	if appStore == nil {
+		writeJSONError(w, http.StatusInternalServerError, "store not initialized")
+		return
+	}
+
+	userID, ok := readUserID(r)
+	if !ok {
+		writeJSONError(w, http.StatusUnauthorized, "missing auth principal or X-User-ID header")
+		return
+	}
+
+	connectionID, err := readIDFromPathOrQuery(r, "aws-connections")
+	if err != nil {
+		writeJSONError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	deleted, err := appStore.DeleteAWSConnectionForUser(r.Context(), connectionID, userID)
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "failed to delete aws connection")
+		return
+	}
+	if !deleted {
+		writeJSONError(w, http.StatusNotFound, "aws connection not found")
+		return
+	}
+
+	_ = appStore.CreateAuditEvent(r.Context(), store.AuditEventInput{
+		ActorUserID: userID,
+		EventType:   "aws_connection.delete",
+		TargetType:  "aws_connection",
+		TargetID:    fmt.Sprintf("%d", connectionID),
+		Status:      "success",
+		Message:     "aws connection deleted",
+	})
+
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func normalizeAWSConnection(req upsertAWSConnectionRequest) (store.UpsertAWSConnectionInput, error) {

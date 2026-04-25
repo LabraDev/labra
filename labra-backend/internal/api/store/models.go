@@ -97,13 +97,25 @@ type PlatformUser struct {
 }
 
 type AuthIdentity struct {
-	ID        int64  `json:"id"`
-	UserID    int64  `json:"user_id"`
-	Provider  string `json:"provider"`
-	Subject   string `json:"subject"`
-	Email     string `json:"email,omitempty"`
-	CreatedAt int64  `json:"created_at"`
-	UpdatedAt int64  `json:"updated_at"`
+	ID             int64  `json:"id"`
+	UserID         int64  `json:"user_id"`
+	Provider       string `json:"provider"`
+	Subject        string `json:"subject"`
+	Email          string `json:"email,omitempty"`
+	AccessToken    string `json:"-"`
+	TokenUpdatedAt int64  `json:"-"`
+	CreatedAt      int64  `json:"created_at"`
+	UpdatedAt      int64  `json:"updated_at"`
+}
+
+type GitHubInstallation struct {
+	ID             int64  `json:"id"`
+	UserID         int64  `json:"user_id"`
+	InstallationID int64  `json:"installation_id"`
+	AccountLogin   string `json:"account_login,omitempty"`
+	TargetType     string `json:"target_type,omitempty"`
+	CreatedAt      int64  `json:"created_at"`
+	UpdatedAt      int64  `json:"updated_at"`
 }
 
 type AuthSession struct {
@@ -186,10 +198,18 @@ type CreatePlatformUserInput struct {
 }
 
 type UpsertAuthIdentityInput struct {
-	UserID   int64
-	Provider string
-	Subject  string
-	Email    string
+	UserID      int64
+	Provider    string
+	Subject     string
+	Email       string
+	AccessToken string
+}
+
+type UpsertGitHubInstallationInput struct {
+	UserID         int64
+	InstallationID int64
+	AccountLogin   string
+	TargetType     string
 }
 
 type CreateAuthSessionInput struct {

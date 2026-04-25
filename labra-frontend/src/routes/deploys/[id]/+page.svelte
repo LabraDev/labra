@@ -3,9 +3,8 @@
 	import { apiGET, apiPOST, prettyDate, shortSHA } from '$lib/api';
 	import { onMount } from 'svelte';
 
-	export let data: { deployID: string };
+export let data: { deployID: string };
 
-	let userID = '1';
 	let loading = false;
 	let error = '';
 	let actionError = '';
@@ -23,8 +22,8 @@
 		loading = true;
 		error = '';
 		try {
-			deploy = await apiGET<Deployment>(`/v1/deploys/${data.deployID}`, userID);
-			const logRes = await apiGET<{ logs: DeploymentLog[] }>(`/v1/deploys/${data.deployID}/logs`, userID);
+			deploy = await apiGET<Deployment>(`/v1/deploys/${data.deployID}`);
+			const logRes = await apiGET<{ logs: DeploymentLog[] }>(`/v1/deploys/${data.deployID}/logs`);
 			logs = logRes.logs ?? [];
 			await loadAIHistory();
 		} catch (err) {
@@ -45,7 +44,7 @@
 		actionError = '';
 		actionMessage = '';
 		try {
-			await apiPOST<{ deployment: Deployment }>(`/v1/deploys/${deploy.id}/cancel`, {}, undefined, userID);
+			await apiPOST<{ deployment: Deployment }>(`/v1/deploys/${deploy.id}/cancel`, {});
 			actionMessage = 'Deployment canceled';
 			await loadPage();
 		} catch (err) {
@@ -61,7 +60,7 @@
 		actionError = '';
 		actionMessage = '';
 		try {
-			const res = await apiPOST<{ deployment: { id: number } }>(`/v1/deploys/${deploy.id}/retry`, {}, undefined, userID);
+			const res = await apiPOST<{ deployment: { id: number } }>(`/v1/deploys/${deploy.id}/retry`, {});
 			const nextID = res?.deployment?.id;
 			if (nextID) {
 				window.location.href = `/deploys/${nextID}`;
@@ -79,7 +78,7 @@
 	async function loadAIHistory() {
 		if (!deploy) return;
 		try {
-			const res = await apiGET<{ logs: AIRequestLog[] }>(`/v1/ai/requests?limit=25`, userID);
+			const res = await apiGET<{ logs: AIRequestLog[] }>(`/v1/ai/requests?limit=25`);
 			aiHistory = (res.logs ?? []).filter((x) => x.deployment_id === deploy?.id).slice(0, 5);
 		} catch {
 			aiHistory = [];
@@ -97,9 +96,7 @@
 					deployment_id: deploy.id,
 					prompt: aiPrompt,
 					bypass_ai: bypassAI
-				},
-				undefined,
-				userID
+				}
 			);
 			await loadAIHistory();
 		} catch (err) {
@@ -119,10 +116,6 @@
 			{/if}
 		</div>
 		<div class="controls">
-			<label>
-				User ID
-				<input bind:value={userID} />
-			</label>
 			<button on:click={cancelDeploy} disabled={actionBusy || loading || !deploy || (deploy.status !== 'queued' && deploy.status !== 'running')}>Cancel</button>
 			<button on:click={retryDeploy} disabled={actionBusy || loading || !deploy || (deploy.status !== 'failed' && deploy.status !== 'canceled')}>Retry</button>
 			<button on:click={loadPage}>Refresh</button>

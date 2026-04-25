@@ -1,0 +1,85 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  Labra customer onboarding role. Creates an IAM role trusted by the Labra platform
+  principal with ExternalId protection for sts:AssumeRole.
+
+Parameters:
+  RoleName:
+    Type: String
+    Default: LabraCustomerDeployRole
+    Description: Name for the IAM role Labra will assume in this customer account.
+    MinLength: 1
+    MaxLength: 64
+    AllowedPattern: "^[A-Za-z0-9+=,.@_-]+$"
+
+  PlatformPrincipalArn:
+    Type: String
+    Description: IAM role ARN in the Labra platform account allowed to call sts:AssumeRole.
+    AllowedPattern: "^arn:aws:iam::[0-9]{12}:role\\/[A-Za-z0-9+=,.@_\\/-]+$"
+
+  ExternalId:
+    Type: String
+    Description: External ID provided by Labra for confused-deputy protection.
+    MinLength: 8
+    MaxLength: 128
+    AllowedPattern: "^[A-Za-z0-9+=,.@:\\/_-]+$"
+
+  ManagedPolicyArns:
+    Type: CommaDelimitedList
+    Description: Managed IAM policies to attach to the customer role.
+    Default: arn:aws:iam::aws:policy/ReadOnlyAccess
+
+  MaxSessionDurationSeconds:
+    Type: Number
+    Description: Maximum STS session duration in seconds.
+    Default: 3600
+    MinValue: 3600
+    MaxValue: 43200
+
+  PermissionsBoundaryArn:
+    Type: String
+    Description: Optional permissions boundary ARN for this role. Leave blank to disable.
+    Default: ""
+
+Conditions:
+  HasPermissionsBoundary: !Not [!Equals [!Ref PermissionsBoundaryArn, ""]]
+
+Resources:
+  LabraCustomerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Ref RoleName
+      MaxSessionDuration: !Ref MaxSessionDurationSeconds
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AllowLabraPlatformAssumeRole
+            Effect: Allow
+            Principal:
+              AWS: !Ref PlatformPrincipalArn
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                sts:ExternalId: !Ref ExternalId
+      ManagedPolicyArns: !Ref ManagedPolicyArns
+      PermissionsBoundary: !If [HasPermissionsBoundary, !Ref PermissionsBoundaryArn, !Ref "AWS::NoValue"]
+      Tags:
+        - Key: ManagedBy
+          Value: CloudFormation
+        - Key: Project
+          Value: labra-customer-onboarding
+        - Key: Purpose
+          Value: cross-account-assume-role
+
+Outputs:
+  CustomerRoleArn:
+    Description: ARN to provide back to Labra in AWS connection settings.
+    Value: !GetAtt LabraCustomerRole.Arn
+
+  CustomerRoleName:
+    Description: Name of the role created for Labra.
+    Value: !Ref LabraCustomerRole
+
+  CustomerAccountId:
+    Description: AWS account ID where this role was created.
+    Value: !Ref AWS::AccountId

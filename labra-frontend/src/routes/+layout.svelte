@@ -1,17 +1,45 @@
 <script lang="ts">
+	import { browser } from '$app/environment';
+	import { goto } from '$app/navigation';
+	import { page } from '$app/stores';
+	import { onMount } from 'svelte';
 	import favicon from '$lib/assets/favicon.svg';
+	import { getSessionToken } from '$lib/api';
 	import Header from '$lib/components/header.svelte';
-	import Footer from '$lib/components/footer.svelte';
+
+	const publicPaths = new Set(['/', '/login']);
+	let isAuthenticated = false;
+
+	function syncAuthState() {
+		isAuthenticated = getSessionToken().trim().length > 0;
+	}
+
+	onMount(() => {
+		syncAuthState();
+		window.addEventListener('storage', syncAuthState);
+		return () => window.removeEventListener('storage', syncAuthState);
+	});
+
+	$: if (browser) {
+		syncAuthState();
+		const path = $page.url.pathname;
+		if (!publicPaths.has(path) && !isAuthenticated) {
+			void goto('/');
+		}
+	}
 </script>
 
 <svelte:head>
 	<link rel="icon" href={favicon} />
 </svelte:head>
 
-<Header />
-<!-- svelte-ignore slot_element_deprecated -->
-<main><slot /></main>
-<Footer />
+<div class="app-shell" class:with-header={isAuthenticated}>
+	{#if isAuthenticated}
+		<Header />
+	{/if}
+	<!-- svelte-ignore slot_element_deprecated -->
+	<main><slot /></main>
+</div>
 
 <style>
 	@import url('https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap');
@@ -69,8 +97,26 @@
 		line-height: 1.45;
 	}
 
+	.app-shell {
+		--header-offset: 0px;
+		min-height: 100dvh;
+		display: flex;
+		flex-direction: column;
+	}
+
+	.app-shell.with-header {
+		--header-offset: 86px;
+	}
+
+	@media (max-width: 940px) {
+		.app-shell.with-header {
+			--header-offset: 126px;
+		}
+	}
+
 	main {
-		min-height: calc(100vh - 220px);
+		flex: 1 1 auto;
+		min-height: 0;
 		background: linear-gradient(180deg, rgba(24, 25, 38, 0.74), rgba(24, 25, 38, 0.9));
 		color: var(--text-color);
 		position: relative;
@@ -133,9 +179,9 @@
 		z-index: 1;
 		max-width: 1120px;
 		margin: 0 auto;
-		padding: 2.2rem 1.1rem 2.8rem;
+		padding: 2.35rem 1.15rem 3rem;
 		display: grid;
-		gap: 1rem;
+		gap: 1.15rem;
 		animation: fade-rise 440ms cubic-bezier(0.18, 0.88, 0.22, 1.05);
 	}
 
@@ -144,8 +190,8 @@
 		justify-content: space-between;
 		align-items: end;
 		flex-wrap: wrap;
-		gap: 1rem;
-		margin-bottom: 0.2rem;
+		gap: 1.05rem;
+		margin-bottom: 0.35rem;
 	}
 
 	:global(.controls) {
@@ -173,10 +219,14 @@
 			linear-gradient(155deg, rgba(73, 77, 100, 0.34), rgba(36, 39, 58, 0.78) 42%, rgba(24, 25, 38, 0.95));
 		border: 1px solid rgba(183, 189, 248, 0.2);
 		border-radius: var(--radius-md);
-		padding: 1rem;
+		padding: 1.1rem;
 		backdrop-filter: blur(6px);
 		box-shadow: var(--shadow-soft);
 		transition: transform 170ms ease, border-color 170ms ease, box-shadow 170ms ease;
+	}
+
+	:global(.page > .tabs) {
+		margin-bottom: 0.1rem;
 	}
 
 	:global(.card:hover),
@@ -349,7 +399,8 @@
 
 	@media (max-width: 760px) {
 		:global(.page) {
-			padding: 1.45rem 0.9rem 2rem;
+			padding: 1.7rem 0.95rem 2.25rem;
+			gap: 1rem;
 		}
 
 		:global(.toolbar) {

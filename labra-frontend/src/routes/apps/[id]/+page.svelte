@@ -1,6 +1,7 @@
 <script lang="ts">
+	import { goto } from '$app/navigation';
 	import type { App, Deployment } from '$lib/api';
-	import { apiGET, apiPATCH, apiPOST, prettyDate, shortSHA } from '$lib/api';
+	import { apiDELETE, apiGET, apiPATCH, apiPOST, prettyDate, shortSHA } from '$lib/api';
 	import { onMount } from 'svelte';
 
 	type HistoryResponse = {
@@ -31,7 +32,6 @@
 
 	export let data: { appID: string };
 
-	let userID = '1';
 	let loading = false;
 	let error = '';
 	let actionError = '';
@@ -48,10 +48,10 @@
 		loading = true;
 		error = '';
 		try {
-			app = await apiGET<App>(`/v1/apps/${data.appID}`, userID);
-			history = await apiGET<HistoryResponse>(`/v1/apps/${data.appID}/deploys`, userID);
-			configHistory = await apiGET<ConfigHistoryResponse>(`/v1/apps/${data.appID}/config-history`, userID);
-			infraOutputs = await apiGET<InfraOutputResponse>(`/v1/apps/${data.appID}/infra-outputs`, userID);
+			app = await apiGET<App>(`/v1/apps/${data.appID}`);
+			history = await apiGET<HistoryResponse>(`/v1/apps/${data.appID}/deploys`);
+			configHistory = await apiGET<ConfigHistoryResponse>(`/v1/apps/${data.appID}/config-history`);
+			infraOutputs = await apiGET<InfraOutputResponse>(`/v1/apps/${data.appID}/infra-outputs`);
 		} catch (err) {
 			error = err instanceof Error ? err.message : 'failed to load app details';
 			app = null;
@@ -69,7 +69,7 @@
 		actionError = '';
 		actionMessage = '';
 		try {
-			const res = await apiPOST<{ deployment: { id: number } }>(`/v1/apps/${app.id}/deploy`, {}, undefined, userID);
+			const res = await apiPOST<{ deployment: { id: number } }>(`/v1/apps/${app.id}/deploy`, {});
 			actionMessage = `Deployment #${res.deployment?.id ?? '?'} queued`;
 			await loadPage();
 		} catch (err) {
@@ -85,12 +85,35 @@
 		actionError = '';
 		actionMessage = '';
 		try {
-			const updated = await apiPATCH<App>(`/v1/apps/${app.id}`, { auto_deploy_enabled: !app.auto_deploy_enabled }, undefined, userID);
+			const updated = await apiPATCH<App>(`/v1/apps/${app.id}`, { auto_deploy_enabled: !app.auto_deploy_enabled });
 			app = updated;
 			actionMessage = `Auto-deploy ${updated.auto_deploy_enabled ? 'enabled' : 'disabled'}`;
 			await loadPage();
 		} catch (err) {
 			actionError = err instanceof Error ? err.message : 'failed to update app';
+		} finally {
+			actionBusy = false;
+		}
+	}
+
+	async function deleteApp() {
+		if (!app) return;
+		if (typeof window !== 'undefined') {
+			const confirmed = window.confirm(
+				`Delete app "${app.name}"? This removes its deploy history and config in Labra.`
+			);
+			if (!confirmed) return;
+		}
+
+		actionBusy = true;
+		actionError = '';
+		actionMessage = '';
+		try {
+			await apiDELETE(`/v1/apps/${app.id}`);
+			actionMessage = 'App deleted.';
+			await goto('/apps');
+		} catch (err) {
+			actionError = err instanceof Error ? err.message : 'failed to delete app';
 		} finally {
 			actionBusy = false;
 		}
@@ -105,18 +128,15 @@
 			<a href="/apps" class="back">← Back to apps</a>
 			<h1>App Deploy History</h1>
 		</div>
-		<div class="controls">
-			<label>
-				User ID
-				<input bind:value={userID} />
-			</label>
-			<button on:click={deployNow} disabled={actionBusy || loading}>Deploy Now</button>
-			<button on:click={toggleAutoDeploy} disabled={actionBusy || loading}>
-				{app?.auto_deploy_enabled ? 'Disable Auto-Deploy' : 'Enable Auto-Deploy'}
-			</button>
-			<button on:click={loadPage}>Refresh</button>
+			<div class="controls">
+				<button on:click={deployNow} disabled={actionBusy || loading}>Deploy Now</button>
+				<button on:click={toggleAutoDeploy} disabled={actionBusy || loading}>
+					{app?.auto_deploy_enabled ? 'Disable Auto-Deploy' : 'Enable Auto-Deploy'}
+				</button>
+				<button class="danger" on:click={deleteApp} disabled={actionBusy || loading}>Delete App</button>
+				<button on:click={loadPage}>Refresh</button>
+			</div>
 		</div>
-	</div>
 
 	{#if loading}
 		<p class="muted">Loading app history...</p>
@@ -198,3 +218,10 @@
 		{/if}
 	{/if}
 </section>
+
+<style>
+	.danger {
+		background: linear-gradient(130deg, var(--red, #ed8796), var(--maroon, #ee99a0));
+		border-color: rgba(237, 135, 150, 0.65);
+	}
+</style>

@@ -32,7 +32,6 @@
 	<div class="toolbar">
 		<div>
 			<h1>Dashboard</h1>
-			<p class="muted">Live control-plane snapshot and service health.</p>
 		</div>
 	</div>
 

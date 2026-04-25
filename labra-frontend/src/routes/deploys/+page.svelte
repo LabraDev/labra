@@ -14,4 +14,8 @@
 		gap: 0.8rem;
 		text-align: center;
 	}
+
+	.deploys-landing .button {
+		text-decoration: none;
+	}
 </style>

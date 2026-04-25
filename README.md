@@ -68,6 +68,9 @@ Common optional values:
 ```dotenv
 GH_CLIENT_ID=
 GH_CLIENT_SECRET=
+GH_APP_ID=
+GH_APP_SLUG=
+GH_APP_PRIVATE_KEY_PEM=
 GITHUB_WEBHOOK_SECRET=
 ```
 
@@ -154,6 +157,71 @@ and Terraform-managed WAF on both ALB and CloudFront.
 
 For complete Terraform-managed coverage, manual exceptions, and rollout steps,
 see [AWS_TERRAFORM_FIRST_PLAN.md](AWS_TERRAFORM_FIRST_PLAN.md).
+
+## GitHub App Setup (Repo-Scoped Dropdown)
+
+Use this when you want users to install Labra against all repos or selected
+repos, then choose from a dropdown in `/apps`.
+
+1. Create the GitHub App:
+   1. Go to GitHub `Settings -> Developer settings -> GitHub Apps -> New GitHub App`.
+   2. Fill these fields:
+      - `GitHub App name`: `labra-dev` (or your unique name)
+      - `Homepage URL`: `https://<your-cloudfront-domain>/`
+      - `Setup URL`: `https://<your-cloudfront-domain>/apps`
+      - `Webhook`: unchecked for now (Labra uses repo webhook endpoint separately)
+      - `Where can this GitHub App be installed?`: `Any account`
+   3. Set repository permissions:
+      - `Metadata`: `Read-only` (required)
+      - `Contents`: `Read-only` (recommended for source access growth)
+   4. Save the app.
+   5. On the app page:
+      - Copy `App ID`
+      - Note the app slug from URL `https://github.com/apps/<slug>`
+      - Generate a private key and download the `.pem`
+
+2. Put GitHub app values in AWS Secrets Manager:
+   1. Open the secret used by control API (`platform_secret_arn` output, or your custom `control_api_oauth_secret_arn`).
+   2. Store JSON keys exactly:
+      - `GH_CLIENT_ID`
+      - `GH_CLIENT_SECRET`
+      - `GH_APP_ID`
+      - `GH_APP_SLUG`
+      - `GH_APP_PRIVATE_KEY_PEM`
+      - `GITHUB_WEBHOOK_SECRET`
+   3. For `GH_APP_PRIVATE_KEY_PEM`, store full PEM as a JSON string with escaped newlines (`\n`).
+   4. Set `GITHUB_WEBHOOK_SECRET` to a long random string, and use the exact same value in GitHub App `Webhook secret`.
+
+   Example secret JSON:
+
+```json
+{
+  "GH_CLIENT_ID": "xxxxxxxxxxxx",
+  "GH_CLIENT_SECRET": "xxxxxxxxxxxxxxxx",
+  "GH_APP_ID": "1234567",
+  "GH_APP_SLUG": "labra-dev",
+  "GH_APP_PRIVATE_KEY_PEM": "-----BEGIN RSA PRIVATE KEY-----\nMIIE...\n-----END RSA PRIVATE KEY-----\n",
+  "GITHUB_WEBHOOK_SECRET": "replace-with-64-hex-or-strong-random-string"
+}
+```
+
+3. Ensure Terraform service secret wiring is enabled:
+   - `labra-infra/env/dev/main.tf` already maps these keys to ECS secrets.
+   - If using a custom secret, set `control_api_oauth_secret_arn` in `terraform.tfvars`.
+   - Apply infra changes:
+
+```bash
+terraform -chdir=labra-infra/env/dev plan
+terraform -chdir=labra-infra/env/dev apply
+```
+
+4. Validate end-to-end behavior:
+   1. Sign in to Labra.
+   2. Open `/apps`, click `Install GitHub App`.
+   3. In GitHub install UI, choose `All repositories` or `Only select repositories`.
+   4. After redirect back to `/apps`, verify:
+      - install success message appears
+      - repository dropdown shows only allowed repos
 
 ## Customer Onboarding AssumeRole One-Click
 

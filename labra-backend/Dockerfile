@@ -1,4 +1,6 @@
 FROM golang:1.25-bookworm AS builder
+ARG TARGETOS=linux
+ARG TARGETARCH=arm64
 
 WORKDIR /src
 
@@ -7,7 +9,7 @@ RUN go mod download
 
 COPY . .
 
-RUN CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -o /out/labra-api ./cmd
+RUN CGO_ENABLED=1 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -o /out/labra-api ./cmd
 
 FROM debian:bookworm-slim
 

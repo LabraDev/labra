@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -67,6 +68,15 @@ func CreateAppHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	in.UserID = userID
+
+	if err := ensureUserCanTrackRepo(r.Context(), in.UserID, in.RepoFullName); err != nil {
+		if accessErr, ok := err.(repoAccessErr); ok {
+			writeJSONError(w, accessErr.Status, accessErr.Message)
+			return
+		}
+		writeJSONError(w, http.StatusInternalServerError, "failed to validate GitHub repository access")
+		return
+	}
 
 	app, err := appStore.CreateApp(r.Context(), in)
 	if err != nil {
@@ -192,6 +202,36 @@ func PatchAppHandler(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, app)
 }
 
+func DeleteAppHandler(w http.ResponseWriter, r *http.Request) {
+	if appStore == nil {
+		writeJSONError(w, http.StatusInternalServerError, "store not initialized")
+		return
+	}
+
+	userID, ok := readUserID(r)
+	if !ok {
+		writeJSONError(w, http.StatusUnauthorized, "missing user id: pass X-User-ID header")
+		return
+	}
+
+	appID, err := readIDFromPathOrQuery(r, "apps")
+	if err != nil {
+		writeJSONError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	if err := appStore.DeleteAppForUser(r.Context(), appID, userID); err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			writeJSONError(w, http.StatusNotFound, "app not found")
+			return
+		}
+		writeJSONError(w, http.StatusInternalServerError, "failed to delete app")
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func normalizeCreateApp(req createAppRequest) (store.CreateAppInput, error) {
 	name := strings.TrimSpace(req.Name)
 	repo := strings.TrimSpace(req.RepoFullName)
@@ -290,6 +330,60 @@ func mergeAppUpdate(current store.App, req updateAppRequest) (store.UpdateAppInp
 	}
 
 	return next, nil
+}
+
+type repoAccessErr struct {
+	Status  int
+	Message string
+}
+
+func (e repoAccessErr) Error() string {
+	return e.Message
+}
+
+func ensureUserCanTrackRepo(ctx context.Context, userID int64, repoFullName string) error {
+	repo := strings.TrimSpace(repoFullName)
+	if repo == "" {
+		return repoAccessErr{Status: http.StatusBadRequest, Message: "repo_full_name is required"}
+	}
+
+	// If GitHub App credentials are not configured, keep existing fallback behavior.
+	if !githubAppConfigured() {
+		return nil
+	}
+
+	installation, err := appStore.GetGitHubInstallationByUserID(ctx, userID)
+	if err != nil {
+		if err == store.ErrNotFound {
+			return repoAccessErr{
+				Status:  http.StatusBadRequest,
+				Message: "GitHub App installation missing. Install GitHub App and select repositories.",
+			}
+		}
+		return repoAccessErr{Status: http.StatusInternalServerError, Message: "failed to load GitHub installation"}
+	}
+
+	installationToken, err := createGitHubInstallationAccessToken(installation.InstallationID)
+	if err != nil {
+		return repoAccessErr{Status: http.StatusBadGateway, Message: err.Error()}
+	}
+
+	repos, err := fetchGitHubInstallationRepositories(installationToken)
+	if err != nil {
+		return repoAccessErr{Status: http.StatusBadGateway, Message: err.Error()}
+	}
+
+	repoLower := strings.ToLower(repo)
+	for _, candidate := range repos {
+		if strings.ToLower(strings.TrimSpace(candidate.FullName)) == repoLower {
+			return nil
+		}
+	}
+
+	return repoAccessErr{
+		Status:  http.StatusForbidden,
+		Message: "Repository is not granted to your GitHub App installation. Update installation access and retry.",
+	}
 }
 
 func readUserID(r *http.Request) (int64, bool) {

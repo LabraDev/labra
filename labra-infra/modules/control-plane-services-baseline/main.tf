@@ -1,7 +1,8 @@
 locals {
   service_subnet_ids     = var.assign_public_ip ? var.public_subnet_ids : (length(var.private_subnet_ids) > 0 ? var.private_subnet_ids : var.public_subnet_ids)
-  api_efs_file_system_id = trimspace(coalesce(var.api_efs_file_system_id, ""))
+  api_efs_file_system_id = trimspace(var.api_efs_file_system_id == null ? "" : var.api_efs_file_system_id)
   enable_api_efs         = local.api_efs_file_system_id != ""
+  secret_read_arns       = distinct([for arn in var.secret_read_arns : trimspace(arn) if trimspace(arn) != ""])
 
   services = {
     "control-api" = {
@@ -11,6 +12,7 @@ locals {
       lb_enabled    = true
       sg_id         = var.api_service_security_group_id
       environment   = lookup(var.service_environment, "control-api", {})
+      secrets       = lookup(var.service_secrets, "control-api", {})
     }
     "deploy-orchestrator" = {
       image         = trimspace(var.deploy_orchestrator_container_image)
@@ -19,6 +21,7 @@ locals {
       lb_enabled    = false
       sg_id         = var.worker_service_security_group_id
       environment   = lookup(var.service_environment, "deploy-orchestrator", {})
+      secrets       = lookup(var.service_secrets, "deploy-orchestrator", {})
     }
     "webhook-ingestor" = {
       image         = trimspace(var.webhook_ingestor_container_image)
@@ -27,10 +30,11 @@ locals {
       lb_enabled    = false
       sg_id         = var.worker_service_security_group_id
       environment   = lookup(var.service_environment, "webhook-ingestor", {})
+      secrets       = lookup(var.service_secrets, "webhook-ingestor", {})
     }
   }
 
-  resolved_execution_role_arn = var.create_execution_role ? aws_iam_role.task_execution[0].arn : trimspace(coalesce(var.execution_role_arn, ""))
+  resolved_execution_role_arn = var.create_execution_role ? aws_iam_role.task_execution[0].arn : trimspace(var.execution_role_arn == null ? "" : var.execution_role_arn)
 }
 
 resource "aws_lb" "api" {
@@ -108,6 +112,27 @@ resource "aws_iam_role_policy_attachment" "task_execution_managed" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
 }
 
+data "aws_iam_policy_document" "task_execution_secret_access" {
+  count = var.create_execution_role && length(local.secret_read_arns) > 0 ? 1 : 0
+
+  statement {
+    sid = "AllowReadConfiguredSecrets"
+    actions = [
+      "secretsmanager:DescribeSecret",
+      "secretsmanager:GetSecretValue"
+    ]
+    resources = local.secret_read_arns
+  }
+}
+
+resource "aws_iam_role_policy" "task_execution_secret_access" {
+  count = var.create_execution_role && length(local.secret_read_arns) > 0 ? 1 : 0
+
+  name   = "${var.name_prefix}-ecs-task-secret-read"
+  role   = aws_iam_role.task_execution[0].id
+  policy = data.aws_iam_policy_document.task_execution_secret_access[0].json
+}
+
 resource "aws_ecs_task_definition" "service" {
   for_each = local.services
 
@@ -118,6 +143,11 @@ resource "aws_ecs_task_definition" "service" {
   memory                   = tostring(var.task_memory)
   execution_role_arn       = local.resolved_execution_role_arn
   task_role_arn            = trimspace(lookup(var.task_role_arns, each.key, "")) != "" ? trimspace(lookup(var.task_role_arns, each.key, "")) : null
+
+  runtime_platform {
+    cpu_architecture        = "ARM64"
+    operating_system_family = "LINUX"
+  }
 
   dynamic "volume" {
     for_each = each.key == "control-api" && local.enable_api_efs ? [1] : []
@@ -154,6 +184,14 @@ resource "aws_ecs_task_definition" "service" {
           }
         ]
       },
+      length(each.value.secrets) > 0 ? {
+        secrets = [
+          for secret_key in sort(keys(each.value.secrets)) : {
+            name      = secret_key
+            valueFrom = each.value.secrets[secret_key]
+          }
+        ]
+      } : {},
       each.key == "control-api" ? {
         portMappings = [
           {

@@ -41,6 +41,7 @@ func main() {
 	} else {
 		logger.Warn("GitHub OAuth is not configured; /v1/login and /v1/callback will not work")
 	}
+	handlers.InitGitHubAppRuntime(cfg.GHAppID, cfg.GHAppPrivateKeyPEM, cfg.GHAppSlug)
 
 	if err := ensureSQLiteDir(cfg.DBURL); err != nil {
 		log.Fatalf("prepare db path: %v", err)
@@ -64,7 +65,11 @@ func main() {
 	handlers.InitAppStore(db)
 	handlers.InitWebhook(cfg.GitHubWebhookSecret)
 	handlers.InitReadiness(db.PingContext)
-	handlers.InitAssumeRoleVerifier(awsverify.LocalAssumeRoleVerifier{})
+	if cfg.Environment == "local" {
+		handlers.InitAssumeRoleVerifier(awsverify.LocalAssumeRoleVerifier{})
+	} else {
+		handlers.InitAssumeRoleVerifier(awsverify.NewSTSAssumeRoleVerifier())
+	}
 	handlers.InitAIRuntime(handlers.AIRuntimeConfig{
 		FeatureEnabled:  cfg.AIFeatureEnabled,
 		KillSwitch:      cfg.AIKillSwitchEnabled,
@@ -94,6 +99,7 @@ func main() {
 
 	routes.HealthRoute(s)
 	routes.Oauth(s)
+	routes.GitHubRoutes(s)
 	routes.AuthSessionRoutes(s)
 	routes.AWSConnections(s)
 	routes.Apps(s)

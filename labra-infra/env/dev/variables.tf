@@ -253,6 +253,41 @@ variable "control_api_github_oauth_redirect_url" {
   default = ""
 }
 
+variable "control_api_oauth_secret_arn" {
+  type    = string
+  default = ""
+}
+
+variable "control_api_github_client_id_secret_key" {
+  type    = string
+  default = "GH_CLIENT_ID"
+}
+
+variable "control_api_github_client_secret_secret_key" {
+  type    = string
+  default = "GH_CLIENT_SECRET"
+}
+
+variable "control_api_github_app_id_secret_key" {
+  type    = string
+  default = "GH_APP_ID"
+}
+
+variable "control_api_github_app_slug_secret_key" {
+  type    = string
+  default = "GH_APP_SLUG"
+}
+
+variable "control_api_github_app_private_key_secret_key" {
+  type    = string
+  default = "GH_APP_PRIVATE_KEY_PEM"
+}
+
+variable "control_api_github_webhook_secret_secret_key" {
+  type    = string
+  default = "GITHUB_WEBHOOK_SECRET"
+}
+
 variable "control_api_ai_prompt_version" {
   type    = string
   default = "phase7-v1"

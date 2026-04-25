@@ -23,9 +23,10 @@ locals {
   effective_region  = coalesce(var.region, data.aws_region.current.name)
   site_bucket_name  = coalesce(var.bucket_name, local.default_bucket_name)
   origin_id         = "${var.name_prefix}-static-origin"
-  api_origin_name   = trimspace(coalesce(var.api_origin_domain_name, ""))
+  api_origin_name   = trimspace(var.api_origin_domain_name == null ? "" : var.api_origin_domain_name)
   api_origin_id     = "${var.name_prefix}-api-origin"
   create_api_origin = local.api_origin_name != ""
+  cloudfront_web_acl_arn = trimspace(var.cloudfront_web_acl_arn == null ? "" : var.cloudfront_web_acl_arn)
   module_tags = merge(var.tags, {
     AppName   = var.app_name
     BuildType = var.build_type
@@ -82,7 +83,7 @@ resource "aws_cloudfront_distribution" "site" {
   default_root_object = var.default_root_object
   price_class         = var.price_class
   wait_for_deployment = false
-  web_acl_id          = trimspace(coalesce(var.cloudfront_web_acl_arn, "")) == "" ? null : trimspace(var.cloudfront_web_acl_arn)
+  web_acl_id          = local.cloudfront_web_acl_arn == "" ? null : local.cloudfront_web_acl_arn
 
   origin {
     domain_name              = aws_s3_bucket.site.bucket_regional_domain_name
