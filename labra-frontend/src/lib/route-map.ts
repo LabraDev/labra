@@ -4,7 +4,5 @@ export const routeMap = {
 	dashboard: '/dashboard',
 	apps: '/apps',
 	appDetail: '/apps/[id]',
-	deploys: '/deploys',
-	deployDetail: '/deploys/[id]',
 	settings: '/settings'
 } as const;

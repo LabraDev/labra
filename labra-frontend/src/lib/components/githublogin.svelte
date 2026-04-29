@@ -7,7 +7,7 @@
 	export let postLoginPath = '';
 
 	const loginPath = `${backendBaseURL}/v1/login`;
-	const fallbackMessage = 'GitHub sign-in is unavailable right now. Use Session Sign-In.';
+	const fallbackMessage = 'Sign-in is unavailable right now. Please try again.';
 	let checking = false;
 
 	function buildFallbackURL(message: string): string {

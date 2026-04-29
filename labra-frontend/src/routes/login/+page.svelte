@@ -2,11 +2,9 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
 	import { onMount } from 'svelte';
-	import { consumePostLoginRedirect, createAuthSession, setSessionToken } from '$lib/api';
+	import GithubLoginButton from '$lib/components/githublogin.svelte';
+	import { consumePostLoginRedirect, setSessionToken } from '$lib/api';
 
-	let externalJWT = '';
-	let loading = false;
-	let error = '';
 	let success = '';
 	let notice = '';
 
@@ -21,8 +19,7 @@
 		if (sessionToken.length === 0) return;
 
 		setSessionToken(sessionToken);
-		success = 'Signed in with GitHub.';
-		error = '';
+		success = 'Signed in successfully.';
 		const postLoginTarget = consumePostLoginRedirect('/dashboard');
 
 		if (window.history?.replaceState) {
@@ -33,44 +30,21 @@
 			void goto(postLoginTarget);
 		}, 250);
 	});
-
-	async function handleLogin() {
-		error = '';
-		success = '';
-		loading = true;
-		try {
-			const session = await createAuthSession(externalJWT.trim());
-			success = `Signed in as ${session.principal.email ?? session.principal.sub}`;
-			const postLoginTarget = consumePostLoginRedirect('/dashboard');
-			setTimeout(() => {
-				void goto(postLoginTarget);
-			}, 350);
-		} catch (err) {
-			error = err instanceof Error ? err.message : 'Login failed';
-		} finally {
-			loading = false;
-		}
-	}
 </script>
 
 <section class="page">
 	<div class="card auth-card">
-		<h1>Session Sign-In</h1>
+		<h1>Sign In</h1>
 		{#if notice}<p class="notice">{notice}</p>{/if}
 		<p class="muted">
-			Secondary option: exchange a Cognito JWT for a Labra session token.
+			Sign in with GitHub to continue.
 		</p>
 		<p class="muted">
-			Use this when GitHub sign-in is unavailable. After creating the session, protected tabs unlock.
+			You will be redirected back here after authentication.
 		</p>
-
-		<label for="jwt">Cognito JWT (ID/Access token)</label>
-		<textarea id="jwt" bind:value={externalJWT} rows="8" placeholder="eyJhbGciOi..."></textarea>
-		<button on:click={handleLogin} disabled={loading || externalJWT.trim().length === 0}>
-			{loading ? 'Signing in...' : 'Create Session'}
-		</button>
-
-		{#if error}<p class="error">{error}</p>{/if}
+		<div class="actions">
+			<GithubLoginButton variant="large" postLoginPath="/dashboard" />
+		</div>
 		{#if success}<p class="success">{success}</p>{/if}
 	</div>
 </section>
@@ -80,7 +54,16 @@
 		max-width: 760px;
 		justify-self: center;
 		display: grid;
-		gap: 0.8rem;
+		gap: 0.9rem;
+	}
+
+	.auth-card :global(p) {
+		margin: 0;
+	}
+
+	.actions {
+		display: flex;
+		justify-content: center;
 	}
 
 	.notice {

@@ -7,6 +7,8 @@ const headerSource = readFileSync('src/lib/components/header.svelte', 'utf8');
 const loginSource = readFileSync('src/routes/login/+page.svelte', 'utf8');
 const settingsSource = readFileSync('src/routes/settings/+page.svelte', 'utf8');
 const appDetailsSource = readFileSync('src/routes/apps/[id]/+page.svelte', 'utf8');
+const appDetailsRuntimeSource = readFileSync('src/routes/apps/[id]/app-details-runtime.ts', 'utf8');
+const deployHistoryTableSource = readFileSync('src/lib/components/deploy-history-table.svelte', 'utf8');
 const deployDetailsSource = readFileSync('src/routes/deploys/[id]/+page.svelte', 'utf8');
 
 test('layout composes header and footer shell', () => {
@@ -23,13 +25,13 @@ test('header exposes sprint 1 nav and login controls', () => {
 });
 
 test('sprint 2 auth and aws settings UI exists', () => {
-  assert.equal(loginSource.includes('Create Session'), true, 'login page should create auth session');
+  assert.equal(loginSource.includes('GithubLoginButton'), true, 'login page should offer hosted GitHub login');
   assert.equal(settingsSource.includes('Validate + Save'), true, 'settings page should save aws connection');
 });
 
 test('sprint 3 app details includes infra output and config history sections', () => {
-  assert.equal(appDetailsSource.includes('Infra Outputs'), true, 'app details should show infra outputs');
-  assert.equal(appDetailsSource.includes('Config History'), true, 'app details should show config history');
+  assert.equal(appDetailsRuntimeSource.includes('/infra-outputs'), true, 'app details runtime should request infra outputs');
+  assert.equal(deployHistoryTableSource.includes('Config History'), true, 'deploy history component should show config history');
 });
 
 test('sprint 4 deploy controls and auto-deploy UX exist', () => {
@@ -42,6 +44,6 @@ test('sprint 4 deploy controls and auto-deploy UX exist', () => {
 test('sprint 5 AI insight UX is visible on deployment details', () => {
   assert.equal(deployDetailsSource.includes('AI Insight'), true, 'deploy details should include AI insight section');
   assert.equal(deployDetailsSource.includes('Generate AI Insight'), true, 'deploy details should include AI generation control');
-  assert.equal(deployDetailsSource.includes('Bypass AI (Fallback)'), true, 'deploy details should support AI bypass');
+  assert.equal(deployDetailsSource.includes('Bypass AI (Fallback)'), false, 'deploy details should not expose AI bypass');
   assert.equal(deployDetailsSource.includes('Recent AI Requests'), true, 'deploy details should show AI request history');
 });

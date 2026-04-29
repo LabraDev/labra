@@ -5,6 +5,7 @@
 
 	let isAuthenticated = false;
 	let logoutBusy = false;
+	let logoGradientDelay = '0s';
 
 	function syncAuthState() {
 		isAuthenticated = getSessionToken().trim().length > 0;
@@ -27,6 +28,8 @@
 
 	onMount(() => {
 		syncAuthState();
+		const gradientCycleMs = 18000;
+		logoGradientDelay = `${-((Date.now() % gradientCycleMs) / 1000)}s`;
 		window.addEventListener('storage', syncAuthState);
 		return () => window.removeEventListener('storage', syncAuthState);
 	});
@@ -34,14 +37,13 @@
 
 <header class="shell-header">
 	<div class="brand-block">
-		<a id="logo" href="/">LABRA</a>
+		<a id="logo" href="/" style={`--logo-gradient-delay: ${logoGradientDelay};`}>LABRA</a>
 	</div>
 
 	{#if isAuthenticated}
 		<nav aria-label="Primary">
 			<a href="/dashboard">Dashboard</a>
 			<a href="/apps">Apps</a>
-			<a href="/deploys">Deploys</a>
 			<a href="/settings">AWS Access</a>
 			<button type="button" class="logout" on:click={handleLogout} disabled={logoutBusy}>
 				{logoutBusy ? 'Signing out...' : 'Logout'}
@@ -82,10 +84,16 @@
 		text-decoration: none;
 		color: transparent;
 		background: linear-gradient(135deg, var(--blue) 8%, var(--lavender) 48%, var(--sky) 88%);
+		background-size: 230% 230%;
+		background-position: 0% 50%;
 		-webkit-background-clip: text;
 		background-clip: text;
 		text-shadow: 0 0 14px rgba(138, 173, 244, 0.22);
-		transition: transform 120ms ease, filter 120ms ease;
+		animation: logo-gradient-flow 18s linear infinite;
+		animation-delay: var(--logo-gradient-delay, 0s);
+		transition:
+			transform 120ms ease,
+			filter 120ms ease;
 	}
 
 	#logo:hover {
@@ -110,7 +118,10 @@
 		font-weight: 600;
 		color: var(--lavender);
 		background: rgba(24, 25, 38, 0.58);
-		transition: transform 120ms ease, border-color 120ms ease, background-color 120ms ease;
+		transition:
+			transform 120ms ease,
+			border-color 120ms ease,
+			background-color 120ms ease;
 	}
 
 	nav a:hover,
@@ -142,6 +153,18 @@
 
 		nav {
 			justify-content: center;
+		}
+	}
+
+	@keyframes logo-gradient-flow {
+		0% {
+			background-position: 0% 50%;
+		}
+		50% {
+			background-position: 100% 50%;
+		}
+		100% {
+			background-position: 0% 50%;
 		}
 	}
 </style>

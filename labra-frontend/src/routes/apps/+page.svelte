@@ -1,6 +1,7 @@
 <script lang="ts">
+	import AppListCard from '$lib/components/app-list-card.svelte';
 	import type { App } from '$lib/api';
-	import { APIError, apiGET, apiPOST, prettyDate } from '$lib/api';
+	import { APIError, apiGET, apiPOST } from '$lib/api';
 	import { onMount } from 'svelte';
 
 	type GitHubRepository = {
@@ -9,6 +10,15 @@
 		default_branch: string;
 		private: boolean;
 		html_url: string;
+	};
+	type AWSConnection = {
+		id: number;
+		role_arn: string;
+		external_id: string;
+		region: string;
+		account_id: string;
+		status: string;
+		updated_at: number;
 	};
 	type GitHubBranch = {
 		name: string;
@@ -24,7 +34,6 @@
 	let reposError = '';
 	let repositories: GitHubRepository[] = [];
 	let branchesLoading = false;
-	let branchesError = '';
 	let branches: GitHubBranch[] = [];
 	let installURL = '';
 	let installURLLoading = false;
@@ -35,6 +44,9 @@
 	let refreshAppsBusy = false;
 	let refreshReposBusy = false;
 	let activeTab: AppsTab = 'create';
+	let awsConnectionsLoading = false;
+	let awsConnectionsError = '';
+	let awsConnectionCount = 0;
 
 	let createBusy = false;
 	let createError = '';
@@ -49,25 +61,33 @@
 	let resolvedOutputDir = 'dist';
 
 	$: selectedRepo = repositories.find((repo) => repo.full_name === repoFullName) ?? null;
-	$: installActionLabel = needsGitHubInstall ? 'Install GitHub App' : 'Update Repository Configuration';
+	$: installActionLabel = needsGitHubInstall
+		? 'Install GitHub App'
+		: 'Update Repository Configuration';
 	$: reposErrorDisplay = normalizeReposError(reposError);
 	$: needsGitHubInstall = requiresGitHubInstall(reposError);
 	$: needsGitHubConfig = requiresGitHubConfig(reposError);
 	$: resolvedOutputDir = outputDirPreset === 'custom' ? customOutputDir.trim() : outputDirPreset;
 	$: hasValidOutputDir = outputDirPreset !== 'custom' || customOutputDir.trim().length > 0;
+	$: hasAWSConnection = awsConnectionCount > 0;
 
 	function normalizeReposError(message: string): string {
+		// map technical backend wording to copy that tells user what to do next
 		const trimmed = message.trim();
 		if (trimmed.length === 0) return '';
 
 		const value = trimmed.toLowerCase();
-		if (value.includes('github oauth token missing') || value.includes('sign in with github again')) {
+		if (
+			value.includes('github oauth token missing') ||
+			value.includes('sign in with github again')
+		) {
 			return 'GitHub App installation missing. Install GitHub App and select repositories.';
 		}
 		return trimmed;
 	}
 
 	function requiresGitHubInstall(message: string): boolean {
+		// central check so install gate stays consistent in all ui branches
 		const value = message.trim().toLowerCase();
 		if (value.length === 0) return false;
 		return (
@@ -80,6 +100,7 @@
 	}
 
 	function requiresGitHubConfig(message: string): boolean {
+		// this means backend env is missing github app config and user cant fix from ui
 		const value = message.trim().toLowerCase();
 		if (value.length === 0) return false;
 		return (
@@ -95,6 +116,7 @@
 	}
 
 	function redirectHomeForAuthError(err: unknown): boolean {
+		// once auth is gone we hard bounce so stale page state does not keep failing actions
 		if (typeof window === 'undefined') return false;
 		if (err instanceof APIError && err.status === 401) {
 			window.location.href = '/';
@@ -144,7 +166,8 @@
 				installStatus = 'GitHub App connected. Loading allowed repositories...';
 				reposError = '';
 			} catch (err) {
-				reposError = err instanceof Error ? err.message : 'failed to connect GitHub App installation';
+				reposError =
+					err instanceof Error ? err.message : 'failed to connect GitHub App installation';
 			}
 		}
 
@@ -153,15 +176,17 @@
 		current.searchParams.delete('state');
 		current.searchParams.delete('account');
 		current.searchParams.delete('target_type');
-		const nextPath = current.pathname + (current.searchParams.toString() ? `?${current.searchParams.toString()}` : '');
+		// scrub callback params so we do not re-run setup logic on refresh
+		const nextPath =
+			current.pathname +
+			(current.searchParams.toString() ? `?${current.searchParams.toString()}` : '');
 		window.history.replaceState({}, '', nextPath);
 	}
 
 	function applyRepoDefaults() {
 		if (!selectedRepo) return;
-		if (appName.trim().length === 0) {
-			appName = selectedRepo.name;
-		}
+		// first repo pick should also populate name and branch so create flow is quick
+		appName = selectedRepo.name;
 		if (branch.trim().length === 0 || branch === 'main') {
 			branch = selectedRepo.default_branch || 'main';
 		}
@@ -169,7 +194,6 @@
 
 	async function loadBranchesForRepo(nextRepoFullName: string, preferDefault: boolean) {
 		const repo = nextRepoFullName.trim();
-		branchesError = '';
 		if (repo.length === 0) {
 			branches = [];
 			return;
@@ -186,6 +210,7 @@
 				.sort((a, b) => a.name.localeCompare(b.name));
 
 			if (branches.length === 0) {
+				// if api returns no branches we still keep a usable fallback
 				const fallbackBranch = selectedRepo?.default_branch?.trim() || branch.trim() || 'main';
 				branches = [{ name: fallbackBranch, protected: false }];
 				branch = fallbackBranch;
@@ -199,10 +224,10 @@
 				branch = branches.find((b) => b.name === preferred)?.name || branches[0].name;
 			}
 		} catch (err) {
+			// branch endpoint failing should not block app creation if user knows branch name
 			const fallbackBranch = selectedRepo?.default_branch?.trim() || branch.trim() || 'main';
 			branches = [{ name: fallbackBranch, protected: false }];
 			branch = fallbackBranch;
-			branchesError = '';
 		} finally {
 			branchesLoading = false;
 		}
@@ -233,9 +258,12 @@
 		reposError = '';
 		try {
 			const data = await apiGET<{ repositories: GitHubRepository[] }>('/v1/github/repositories');
-			repositories = (data.repositories ?? []).sort((a, b) => a.full_name.localeCompare(b.full_name));
+			repositories = (data.repositories ?? []).sort((a, b) =>
+				a.full_name.localeCompare(b.full_name)
+			);
 			let selectedRepoChanged = false;
 			if (repositories.length > 0 && repoFullName.trim().length === 0) {
+				// first load auto selects repo so user can create with fewer clicks
 				repoFullName = repositories[0].full_name;
 				branch = repositories[0].default_branch || 'main';
 				if (appName.trim().length === 0) {
@@ -250,13 +278,24 @@
 			if (redirectHomeForAuthError(err)) return;
 			repositories = [];
 			branches = [];
-			branchesError = '';
-			reposError =
-				err instanceof Error
-					? err.message
-					: 'failed to load repositories';
+			reposError = err instanceof Error ? err.message : 'failed to load repositories';
 		} finally {
 			reposLoading = false;
+		}
+	}
+
+	async function loadAWSConnections() {
+		awsConnectionsLoading = true;
+		awsConnectionsError = '';
+		try {
+			const data = await apiGET<{ aws_connections: AWSConnection[] }>('/v1/aws-connections');
+			awsConnectionCount = data.aws_connections?.length ?? 0;
+		} catch (err) {
+			if (redirectHomeForAuthError(err)) return;
+			awsConnectionsError = err instanceof Error ? err.message : 'failed to load AWS connections';
+			awsConnectionCount = 0;
+		} finally {
+			awsConnectionsLoading = false;
 		}
 	}
 
@@ -276,17 +315,45 @@
 		try {
 			const created = await apiPOST<App>('/v1/apps', {
 				name: appName.trim(),
-					repo_full_name: repoFullName.trim(),
-					branch: branch.trim(),
-					build_type: 'static',
-					output_dir: resolvedOutputDir || 'dist',
-					root_dir: '',
-					site_url: '',
-					auto_deploy_enabled: autoDeployEnabled
-				});
-			createSuccess = `Created ${created.name}. Opening app details...`;
+				repo_full_name: repoFullName.trim(),
+				branch: branch.trim(),
+				build_type: 'static',
+				output_dir: resolvedOutputDir || 'dist',
+				root_dir: '',
+				site_url: '',
+				auto_deploy_enabled: autoDeployEnabled
+			});
+			let queuedDeployID = 0;
+			let deployErrorMessage = '';
+			try {
+				// queue first deploy immediately so new app does not look idle
+				const deployRes = await apiPOST<{ deployment: { id: number } }>(
+					`/v1/apps/${created.id}/deploy`,
+					{}
+				);
+				queuedDeployID = deployRes.deployment?.id ?? 0;
+			} catch (deployErr) {
+				deployErrorMessage =
+					deployErr instanceof Error ? deployErr.message : 'failed to queue initial deployment';
+			}
+
+			createSuccess =
+				queuedDeployID > 0
+					? `Created ${created.name}. Deployment #${queuedDeployID} queued. Opening app details...`
+					: `Created ${created.name}. Opening app details...`;
 			await loadApps();
-			window.location.href = `/apps/${created.id}`;
+
+			const params = new URLSearchParams();
+			if (queuedDeployID > 0) {
+				params.set('queued_deploy_id', String(queuedDeployID));
+			}
+			if (deployErrorMessage) {
+				// trim to keep query string reasonable and avoid giant url noise
+				params.set('initial_deploy_error', deployErrorMessage.slice(0, 220));
+			}
+			const suffix = params.toString();
+			window.location.href =
+				suffix.length > 0 ? `/apps/${created.id}?${suffix}` : `/apps/${created.id}`;
 		} catch (err) {
 			if (redirectHomeForAuthError(err)) return;
 			createError = err instanceof Error ? err.message : 'failed to create app';
@@ -314,8 +381,9 @@
 	}
 
 	onMount(async () => {
+		// order here matters because callback sync can change repo loading behavior
 		await syncGitHubInstallationFromURL();
-		await Promise.all([refreshApps(), refreshRepos()]);
+		await Promise.all([refreshApps(), refreshRepos(), loadAWSConnections()]);
 	});
 </script>
 
@@ -326,181 +394,193 @@
 		</div>
 	</div>
 
-	<div class="tabs" role="tablist" aria-label="Apps sections">
-		<button
-			type="button"
-			role="tab"
-			class="tab-button"
-			class:active={activeTab === 'create'}
-			aria-selected={activeTab === 'create'}
-			on:click={() => (activeTab = 'create')}
-		>
-			Create New App
-		</button>
-		<button
-			type="button"
-			role="tab"
-			class="tab-button"
-			class:active={activeTab === 'apps'}
-			aria-selected={activeTab === 'apps'}
-			on:click={() => (activeTab = 'apps')}
-		>
-			Existing Apps
-		</button>
-	</div>
-
-	{#if activeTab === 'create'}
-		<div class="card create-card" role="tabpanel">
-			<div class="panel-head">
-				<div>
-					<h2>Create App</h2>
-					<p class="muted">Pick a GitHub repository and branch, then Labra will manage deploy runs for this app.</p>
-				</div>
-				<button
-					type="button"
-					class="secondary"
-					on:click={refreshRepos}
-					disabled={refreshReposBusy || reposLoading || installURLLoading}
-				>
-					{refreshReposBusy || reposLoading || installURLLoading ? 'Refreshing Repos...' : 'Refresh Repos'}
-				</button>
-			</div>
-			{#if installStatus}
-				<p class="success">{installStatus}</p>
-			{/if}
-
-			{#if reposError}
-				<p class="error">{reposErrorDisplay}</p>
-				{#if needsGitHubInstall}
-					<p class="muted">Install the GitHub App, then return here to choose a deployment repository.</p>
-				{:else if needsGitHubConfig}
-					<p class="muted">Labra GitHub App credentials are not configured on the backend yet.</p>
-				{:else}
-					<p class="muted">Manual fallback: enter repo as <code>owner/repo</code>.</p>
-				{/if}
-			{/if}
-
-			{#if !needsGitHubConfig}
-				{#if installURL}
-					<button type="button" class="secondary install-button" on:click={openGitHubInstall}>
-						{installActionLabel}
-					</button>
-				{:else if installURLLoading}
-					<p class="muted">Loading install URL...</p>
-				{:else if installURLError}
-					<p class="muted">{installURLError}</p>
-				{/if}
-			{/if}
-
-			<label for="repo">Repository</label>
-			{#if repositories.length > 0}
-				<select
-					id="repo"
-					bind:value={repoFullName}
-					on:change={handleRepoChange}
-				>
-					{#each repositories as repo}
-						<option value={repo.full_name}>
-							{repo.full_name} {repo.private ? '(private)' : '(public)'}
-						</option>
-					{/each}
-				</select>
-			{:else if needsGitHubInstall || needsGitHubConfig}
-				<input id="repo" value="" placeholder="Connect GitHub to load repositories" disabled />
-			{:else}
-				<input id="repo" bind:value={repoFullName} placeholder="owner/repo" />
-			{/if}
-
-			{#if selectedRepo}
-				<div class="repo-link-row">
-					<a class="repo-link" href={selectedRepo.html_url} target="_blank" rel="noreferrer">Open repo</a>
-				</div>
-			{/if}
-
-			<label for="app-name">App Name</label>
-			<input id="app-name" bind:value={appName} placeholder="my-app" />
-
-			<label for="branch">Branch</label>
-			{#if branchesLoading}
-				<input id="branch" value={branch || 'Loading branches...'} disabled />
-			{:else if branches.length > 0}
-				<select id="branch" bind:value={branch}>
-					{#each branches as branchOption}
-						<option value={branchOption.name}>{branchOption.name}</option>
-					{/each}
-				</select>
-			{:else}
-				<input id="branch" bind:value={branch} placeholder="main" />
-			{/if}
-			{#if branchesError}
-				<p class="muted">Branch list unavailable right now. Enter branch manually.</p>
-			{/if}
-
-			<details class="advanced-settings" bind:open={showAdvanced}>
-				<summary>Advanced</summary>
-				<div class="advanced-grid">
-					<label for="output-dir-preset">Output Directory</label>
-					<select id="output-dir-preset" bind:value={outputDirPreset}>
-						<option value="dist">dist</option>
-						<option value="build">build</option>
-						<option value="out">out</option>
-						<option value="custom">Custom...</option>
-					</select>
-					{#if outputDirPreset === 'custom'}
-						<label for="output-dir-custom">Custom Output Directory</label>
-						<input id="output-dir-custom" bind:value={customOutputDir} placeholder="dist" />
-					{/if}
-				</div>
-			</details>
-
-			<label class="checkbox-row" for="auto-deploy">
-				<input id="auto-deploy" type="checkbox" bind:checked={autoDeployEnabled} />
-				<span>Enable auto-deploy on new push events</span>
-			</label>
-
-			<button
-				on:click={createApp}
-				disabled={createBusy || needsGitHubInstall || needsGitHubConfig || appName.trim().length === 0 || repoFullName.trim().length === 0 || !hasValidOutputDir}
-			>
-				{createBusy ? 'Creating...' : 'Create App'}
-			</button>
-
-			{#if createError}
-				<p class="error">{createError}</p>
-			{:else if createSuccess}
-				<p class="success">{createSuccess}</p>
-			{/if}
+	{#if awsConnectionsLoading}
+		<p class="muted">Checking AWS connections...</p>
+	{:else if awsConnectionsError}
+		<p class="error">{awsConnectionsError}</p>
+	{:else if !hasAWSConnection}
+		<div class="card aws-gate">
+			<h2>AWS Connection Required</h2>
+			<p class="muted">Connect at least 1 AWS account before creating or viewing apps.</p>
+			<a class="button" href="/settings">Go To AWS Access</a>
 		</div>
 	{:else}
-		<div role="tabpanel">
-			<div class="panel-head">
-				<div>
-					<h2>Existing Apps</h2>
-				</div>
-				<button type="button" on:click={refreshApps} disabled={refreshAppsBusy || loading}>
-					{refreshAppsBusy || loading ? 'Refreshing Apps...' : 'Refresh Apps'}
-				</button>
-			</div>
-			{#if loading}
-				<p class="muted">Loading apps...</p>
-			{:else if error}
-				<p class="error">{error}</p>
-			{:else if apps.length === 0}
-				<p class="muted">No apps yet. Create your first app in the Create New App tab.</p>
-			{:else}
-				<div class="cards">
-					{#each apps as app}
-						<a class="card" href={`/apps/${app.id}`}>
-							<h2>{app.name}</h2>
-							<p><strong>Repo:</strong> {app.repo_full_name}</p>
-							<p><strong>Branch:</strong> {app.branch}</p>
-							<p><strong>Build:</strong> {app.build_type}</p>
-							<p><strong>Updated:</strong> {prettyDate(app.updated_at)}</p>
-						</a>
-					{/each}
-				</div>
-			{/if}
+		<div class="tabs" role="tablist" aria-label="Apps sections">
+			<button
+				type="button"
+				role="tab"
+				class="tab-button"
+				class:active={activeTab === 'create'}
+				aria-selected={activeTab === 'create'}
+				on:click={() => (activeTab = 'create')}
+			>
+				Create New App
+			</button>
+			<button
+				type="button"
+				role="tab"
+				class="tab-button"
+				class:active={activeTab === 'apps'}
+				aria-selected={activeTab === 'apps'}
+				on:click={() => (activeTab = 'apps')}
+			>
+				Existing Apps
+			</button>
 		</div>
+
+		{#if activeTab === 'create'}
+			<div class="card create-card" role="tabpanel">
+				<div class="panel-head">
+					<div>
+						<h2>Create App</h2>
+						<p class="muted">
+							Pick a GitHub repository and branch, then Labra will manage deploy runs for this app.
+						</p>
+					</div>
+					<button
+						type="button"
+						class="secondary"
+						on:click={refreshRepos}
+						disabled={refreshReposBusy || reposLoading || installURLLoading}
+					>
+						{refreshReposBusy || reposLoading || installURLLoading
+							? 'Refreshing Repos...'
+							: 'Refresh Repos'}
+					</button>
+				</div>
+				{#if installStatus}
+					<p class="success">{installStatus}</p>
+				{/if}
+
+				{#if reposError}
+					<p class="error">{reposErrorDisplay}</p>
+					{#if needsGitHubInstall}
+						<p class="muted">
+							Install the GitHub App, then return here to choose a deployment repository.
+						</p>
+					{:else if needsGitHubConfig}
+						<p class="muted">Labra GitHub App credentials are not configured on the backend yet.</p>
+					{/if}
+				{/if}
+
+				{#if !needsGitHubConfig}
+					{#if installURL}
+						<button type="button" class="secondary install-button" on:click={openGitHubInstall}>
+							{installActionLabel}
+						</button>
+					{:else if installURLLoading}
+						<p class="muted">Loading install URL...</p>
+					{:else if installURLError}
+						<p class="muted">{installURLError}</p>
+					{/if}
+				{/if}
+
+				<label for="repo">Repository</label>
+				{#if repositories.length > 0}
+					<select id="repo" bind:value={repoFullName} on:change={handleRepoChange}>
+						{#each repositories as repo}
+							<option value={repo.full_name}>
+								{repo.full_name}
+								{repo.private ? '(private)' : '(public)'}
+							</option>
+						{/each}
+					</select>
+				{:else if needsGitHubInstall || needsGitHubConfig}
+					<input id="repo" value="" placeholder="Connect GitHub to load repositories" disabled />
+				{:else}
+					<input id="repo" bind:value={repoFullName} placeholder="owner/repo" />
+				{/if}
+
+				{#if selectedRepo}
+					<div class="repo-link-row">
+						<a class="repo-link" href={selectedRepo.html_url} target="_blank" rel="noreferrer"
+							>Open repo</a
+						>
+					</div>
+				{/if}
+
+				<label for="app-name">App Name</label>
+				<input id="app-name" bind:value={appName} placeholder="my-app" />
+
+				<label for="branch">Branch</label>
+				{#if branchesLoading}
+					<input id="branch" value={branch || 'Loading branches...'} disabled />
+				{:else if branches.length > 0}
+					<select id="branch" bind:value={branch}>
+						{#each branches as branchOption}
+							<option value={branchOption.name}>{branchOption.name}</option>
+						{/each}
+					</select>
+				{:else}
+					<input id="branch" bind:value={branch} placeholder="main" />
+				{/if}
+
+				<details class="advanced-settings" bind:open={showAdvanced}>
+					<summary>Advanced</summary>
+					<div class="advanced-grid">
+						<label for="output-dir-preset">Output Directory</label>
+						<select id="output-dir-preset" bind:value={outputDirPreset}>
+							<option value="dist">dist</option>
+							<option value="build">build</option>
+							<option value="out">out</option>
+							<option value="custom">Custom...</option>
+						</select>
+						{#if outputDirPreset === 'custom'}
+							<label for="output-dir-custom">Custom Output Directory</label>
+							<input id="output-dir-custom" bind:value={customOutputDir} placeholder="dist" />
+						{/if}
+					</div>
+				</details>
+
+				<label class="checkbox-row" for="auto-deploy">
+					<input id="auto-deploy" type="checkbox" bind:checked={autoDeployEnabled} />
+					<span>Enable auto-deploy on new push events</span>
+				</label>
+
+				<button
+					on:click={createApp}
+					disabled={createBusy ||
+						needsGitHubInstall ||
+						needsGitHubConfig ||
+						appName.trim().length === 0 ||
+						repoFullName.trim().length === 0 ||
+						branch.trim().length === 0 ||
+						!hasValidOutputDir}
+				>
+					{createBusy ? 'Creating...' : 'Create App'}
+				</button>
+
+				{#if createError}
+					<p class="error">{createError}</p>
+				{:else if createSuccess}
+					<p class="success">{createSuccess}</p>
+				{/if}
+			</div>
+		{:else}
+			<div role="tabpanel">
+				<div class="panel-head">
+					<div>
+						<h2>Existing Apps</h2>
+					</div>
+					<button type="button" on:click={refreshApps} disabled={refreshAppsBusy || loading}>
+						{refreshAppsBusy || loading ? 'Refreshing Apps...' : 'Refresh Apps'}
+					</button>
+				</div>
+				{#if loading}
+					<p class="muted">Loading apps...</p>
+				{:else if error}
+					<p class="error">{error}</p>
+				{:else if apps.length === 0}
+					<p class="muted">No apps yet. Create your first app in the Create New App tab.</p>
+				{:else}
+					<div class="cards">
+						{#each apps as app}
+							<AppListCard app={app} showBuild={true} />
+						{/each}
+					</div>
+				{/if}
+			</div>
+		{/if}
 	{/if}
 </section>
 
@@ -528,19 +608,42 @@
 		display: flex;
 		justify-content: space-between;
 		align-items: flex-start;
-		gap: 0.8rem;
+		gap: 0.9rem;
 		flex-wrap: wrap;
+	}
+
+	.panel-head h2 {
+		margin-bottom: 0.28rem;
 	}
 
 	.create-card {
 		display: grid;
-		gap: 0.8rem;
+		gap: 0.9rem;
 		margin-bottom: 0.45rem;
 	}
 
-	.repo-link-row {
-		margin-top: -0.05rem;
+	.create-card h2 {
 		margin-bottom: 0.2rem;
+	}
+
+	.aws-gate {
+		display: grid;
+		gap: 0.9rem;
+		max-width: 38rem;
+	}
+
+		.aws-gate .button {
+			display: inline-flex;
+			align-items: center;
+			justify-content: center;
+			width: fit-content;
+			align-self: start;
+			padding-inline: 1rem;
+		}
+
+	.repo-link-row {
+		margin-top: 0;
+		margin-bottom: 0.36rem;
 		padding-left: 0.7rem;
 	}
 
@@ -560,12 +663,19 @@
 
 	.install-button {
 		width: fit-content;
+		margin-top: 0.14rem;
+		margin-bottom: 0.14rem;
+	}
+
+	.panel-head + .install-button {
+		margin-top: -0.48rem;
 	}
 
 	.checkbox-row {
 		display: flex;
 		align-items: center;
-		gap: 0.55rem;
+		gap: 0.6rem;
+		margin-top: 0.1rem;
 	}
 
 	.checkbox-row input[type='checkbox'] {
@@ -609,8 +719,8 @@
 
 	.advanced-grid {
 		display: grid;
-		gap: 0.4rem;
-		margin-top: 0.45rem;
+		gap: 0.44rem;
+		margin-top: 0.52rem;
 	}
 
 	.advanced-grid label {

@@ -8,7 +8,7 @@ const requiredRoutes = [
   'src/routes/dashboard/+page.svelte',
   'src/routes/apps/+page.svelte',
   'src/routes/apps/[id]/+page.svelte',
-  'src/routes/deploys/+page.svelte',
+  'src/routes/deploys/+page.ts',
   'src/routes/deploys/[id]/+page.svelte',
   'src/routes/settings/+page.svelte'
 ];
