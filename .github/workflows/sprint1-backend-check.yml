@@ -35,3 +35,13 @@ jobs:
 
       - name: Race Tests
         run: go test -race ./...
+
+      - name: Generate OpenAPI Artifact
+        run: ./scripts/generate-openapi.sh
+
+      - name: Upload OpenAPI Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: labra-openapi-json
+          path: labra-backend/dist/openapi.json
+          if-no-files-found: error
