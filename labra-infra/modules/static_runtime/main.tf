@@ -20,12 +20,12 @@ locals {
     0,
     63
   )
-  effective_region  = coalesce(var.region, data.aws_region.current.name)
-  site_bucket_name  = coalesce(var.bucket_name, local.default_bucket_name)
-  origin_id         = "${var.name_prefix}-static-origin"
-  api_origin_name   = trimspace(var.api_origin_domain_name == null ? "" : var.api_origin_domain_name)
-  api_origin_id     = "${var.name_prefix}-api-origin"
-  create_api_origin = local.api_origin_name != ""
+  effective_region       = coalesce(var.region, data.aws_region.current.name)
+  site_bucket_name       = coalesce(var.bucket_name, local.default_bucket_name)
+  origin_id              = "${var.name_prefix}-static-origin"
+  api_origin_name        = trimspace(var.api_origin_domain_name == null ? "" : var.api_origin_domain_name)
+  api_origin_id          = "${var.name_prefix}-api-origin"
+  create_api_origin      = local.api_origin_name != ""
   cloudfront_web_acl_arn = trimspace(var.cloudfront_web_acl_arn == null ? "" : var.cloudfront_web_acl_arn)
   module_tags = merge(var.tags, {
     AppName   = var.app_name
@@ -85,29 +85,35 @@ resource "aws_cloudfront_distribution" "site" {
   wait_for_deployment = false
   web_acl_id          = local.cloudfront_web_acl_arn == "" ? null : local.cloudfront_web_acl_arn
 
-  origin {
-    domain_name              = aws_s3_bucket.site.bucket_regional_domain_name
-    origin_id                = local.origin_id
-    origin_access_control_id = aws_cloudfront_origin_access_control.site.id
-
-    s3_origin_config {
-      origin_access_identity = ""
-    }
-  }
-
   dynamic "origin" {
     for_each = local.create_api_origin ? [1] : []
 
     content {
-      domain_name = local.api_origin_name
-      origin_id   = local.api_origin_id
+      domain_name         = local.api_origin_name
+      origin_id           = local.api_origin_id
+      connection_attempts = 3
+      connection_timeout  = 10
 
       custom_origin_config {
-        http_port              = 80
-        https_port             = 443
-        origin_protocol_policy = var.api_origin_protocol_policy
-        origin_ssl_protocols   = ["TLSv1.2"]
+        http_port                = 80
+        https_port               = 443
+        origin_keepalive_timeout = 5
+        origin_protocol_policy   = var.api_origin_protocol_policy
+        origin_read_timeout      = 30
+        origin_ssl_protocols     = ["TLSv1.2"]
       }
+    }
+  }
+
+  origin {
+    domain_name              = aws_s3_bucket.site.bucket_regional_domain_name
+    origin_id                = local.origin_id
+    origin_access_control_id = aws_cloudfront_origin_access_control.site.id
+    connection_attempts      = 3
+    connection_timeout       = 10
+
+    s3_origin_config {
+      origin_access_identity = ""
     }
   }
 
@@ -159,6 +165,12 @@ resource "aws_cloudfront_distribution" "site" {
   tags = merge(local.module_tags, {
     Name = "${var.name_prefix}-static-cdn"
   })
+
+  lifecycle {
+    # Provider/API normalization can reorder origin blocks without semantic changes,
+    # causing perpetual in-place diff noise.
+    ignore_changes = [origin]
+  }
 }
 
 data "aws_iam_policy_document" "site_bucket_policy" {

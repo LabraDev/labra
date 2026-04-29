@@ -48,25 +48,6 @@ variable "roadmap_version" {
   default = "Ver 0.1"
 }
 
-variable "bootstrap_state_backend" {
-  type    = bool
-  default = false
-}
-
-variable "state_bucket_name" {
-  type = string
-}
-
-variable "state_lock_table_name" {
-  type    = string
-  default = null
-}
-
-variable "state_bucket_force_destroy" {
-  type    = bool
-  default = false
-}
-
 variable "enable_foundation_modules" {
   type    = bool
   default = true
@@ -107,34 +88,9 @@ variable "logging_group_suffixes" {
   default = ["api", "deploy-runner", "webhook", "auth"]
 }
 
-variable "secrets_create_placeholder_secret" {
+variable "secrets_create_platform_secret" {
   type    = bool
   default = true
-}
-
-variable "enable_cognito_baseline" {
-  type    = bool
-  default = true
-}
-
-variable "cognito_callback_urls" {
-  type    = list(string)
-  default = ["https://app.example.com/dashboard"]
-}
-
-variable "cognito_logout_urls" {
-  type    = list(string)
-  default = ["https://app.example.com/login"]
-}
-
-variable "cognito_create_domain" {
-  type    = bool
-  default = true
-}
-
-variable "cognito_domain_prefix" {
-  type    = string
-  default = null
 }
 
 variable "enable_control_plane_cluster" {
@@ -288,6 +244,11 @@ variable "control_api_github_webhook_secret_secret_key" {
   default = "GITHUB_WEBHOOK_SECRET"
 }
 
+variable "control_api_openai_api_key_secret_key" {
+  type    = string
+  default = ""
+}
+
 variable "control_api_ai_prompt_version" {
   type    = string
   default = "phase7-v1"
@@ -295,7 +256,12 @@ variable "control_api_ai_prompt_version" {
 
 variable "control_api_ai_provider_model" {
   type    = string
-  default = "mock-ops-v1"
+  default = "us.amazon.nova-lite-v1:0"
+}
+
+variable "control_api_ai_bedrock_region" {
+  type    = string
+  default = "us-west-1"
 }
 
 variable "control_api_desired_count" {

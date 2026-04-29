@@ -32,14 +32,17 @@ locals {
   control_api_db_mount_path    = trimspace(var.control_api_db_mount_path)
   control_api_effective_db_url = trimspace(var.control_api_db_url) != "" ? trimspace(var.control_api_db_url) : "${local.control_api_db_mount_path}/labra.db"
   control_api_oauth_secret_arn = trimspace(var.control_api_oauth_secret_arn) != "" ? trimspace(var.control_api_oauth_secret_arn) : trimspace(try(module.secrets_baseline[0].platform_secret_arn, ""))
-  control_api_oauth_secrets = local.control_api_oauth_secret_arn == "" ? {} : {
+  control_api_openai_secret = trimspace(var.control_api_openai_api_key_secret_key) == "" ? {} : {
+    OPENAI_API_KEY = "${local.control_api_oauth_secret_arn}:${trimspace(var.control_api_openai_api_key_secret_key)}::"
+  }
+  control_api_oauth_secrets = local.control_api_oauth_secret_arn == "" ? {} : merge({
     GH_CLIENT_ID           = "${local.control_api_oauth_secret_arn}:${trimspace(var.control_api_github_client_id_secret_key)}::"
     GH_CLIENT_SECRET       = "${local.control_api_oauth_secret_arn}:${trimspace(var.control_api_github_client_secret_secret_key)}::"
     GH_APP_ID              = "${local.control_api_oauth_secret_arn}:${trimspace(var.control_api_github_app_id_secret_key)}::"
     GH_APP_SLUG            = "${local.control_api_oauth_secret_arn}:${trimspace(var.control_api_github_app_slug_secret_key)}::"
     GH_APP_PRIVATE_KEY_PEM = "${local.control_api_oauth_secret_arn}:${trimspace(var.control_api_github_app_private_key_secret_key)}::"
     GITHUB_WEBHOOK_SECRET  = "${local.control_api_oauth_secret_arn}:${trimspace(var.control_api_github_webhook_secret_secret_key)}::"
-  }
+  }, local.control_api_openai_secret)
   tags = merge({
     Project      = var.project_name
     Environment  = var.environment
@@ -49,17 +52,6 @@ locals {
     Version      = var.roadmap_version
     RoadmapPhase = var.roadmap_phase
   }, var.extra_tags)
-}
-
-module "state_bootstrap" {
-  count  = var.bootstrap_state_backend ? 1 : 0
-  source = "../../modules/state-bootstrap"
-
-  name_prefix       = local.resource_prefix
-  state_bucket_name = var.state_bucket_name
-  lock_table_name   = var.state_lock_table_name
-  force_destroy     = var.state_bucket_force_destroy
-  tags              = local.tags
 }
 
 module "kms_baseline" {
@@ -120,21 +112,9 @@ module "secrets_baseline" {
   count  = var.enable_foundation_modules ? 1 : 0
   source = "../../modules/secrets-baseline"
 
-  name_prefix               = local.resource_prefix
-  create_placeholder_secret = var.secrets_create_placeholder_secret
-  tags                      = local.tags
-}
-
-module "cognito_baseline" {
-  count  = var.enable_cognito_baseline ? 1 : 0
-  source = "../../modules/cognito-baseline"
-
-  name_prefix   = local.resource_prefix
-  callback_urls = var.cognito_callback_urls
-  logout_urls   = var.cognito_logout_urls
-  create_domain = var.cognito_create_domain
-  domain_prefix = var.cognito_domain_prefix
-  tags          = local.tags
+  name_prefix            = local.resource_prefix
+  create_platform_secret = var.secrets_create_platform_secret
+  tags                   = local.tags
 }
 
 module "control_plane_cluster" {
@@ -206,9 +186,10 @@ module "control_plane_services_baseline" {
       GITHUB_OAUTH_REDIRECT_URL = var.control_api_github_oauth_redirect_url
       AI_PROMPT_VERSION         = var.control_api_ai_prompt_version
       AI_PROVIDER_MODEL         = var.control_api_ai_provider_model
+      AI_BEDROCK_REGION         = var.control_api_ai_bedrock_region
       AI_FEATURE_ENABLED        = tostring(var.ai_feature_enabled)
       AI_KILL_SWITCH_ENABLED    = tostring(var.ai_kill_switch_enabled)
-    }, local.control_api_oauth_secret_arn == "" ? {
+      }, local.control_api_oauth_secret_arn == "" ? {
       GITHUB_WEBHOOK_SECRET = var.control_api_github_webhook_secret
     } : {})
   }

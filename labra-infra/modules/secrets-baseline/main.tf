@@ -1,5 +1,5 @@
 resource "aws_secretsmanager_secret" "platform" {
-  count = var.create_placeholder_secret ? 1 : 0
+  count = var.create_platform_secret ? 1 : 0
 
   name                    = "${var.name_prefix}/platform"
   description             = "Labra platform secret envelope (populate values outside Terraform)."

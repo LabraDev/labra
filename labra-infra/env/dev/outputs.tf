@@ -22,14 +22,6 @@ output "build_type" {
   value = var.build_type
 }
 
-output "state_bucket_name" {
-  value = try(module.state_bootstrap[0].state_bucket_name, null)
-}
-
-output "state_lock_table_name" {
-  value = try(module.state_bootstrap[0].lock_table_name, null)
-}
-
 output "static_bucket_name" {
   value = module.static_runtime.bucket_name
 }
@@ -108,18 +100,6 @@ output "github_oidc_provider_arn" {
 
 output "platform_secret_arn" {
   value = try(module.secrets_baseline[0].platform_secret_arn, null)
-}
-
-output "cognito_user_pool_id" {
-  value = try(module.cognito_baseline[0].user_pool_id, null)
-}
-
-output "cognito_app_client_id" {
-  value = try(module.cognito_baseline[0].app_client_id, null)
-}
-
-output "cognito_domain" {
-  value = try(module.cognito_baseline[0].domain, null)
 }
 
 output "control_plane_cluster_name" {

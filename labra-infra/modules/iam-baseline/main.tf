@@ -32,7 +32,9 @@ data "aws_iam_policy_document" "backend_policy" {
       "logs:CreateLogStream",
       "logs:PutLogEvents",
       "logs:DescribeLogStreams",
-      "sts:AssumeRole"
+      "sts:AssumeRole",
+      "bedrock:InvokeModel",
+      "bedrock:InvokeModelWithResponseStream"
     ]
     resources = ["*"]
   }

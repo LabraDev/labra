@@ -93,6 +93,29 @@ read_tfvar_value() {
   printf '%s' "$value"
 }
 
+read_tfvar_value_from_file() {
+  local file="$1"
+  local key="$2"
+  local line value
+
+  [[ -f "$file" ]] || {
+    printf ''
+    return 0
+  }
+
+  line="$(grep -E "^[[:space:]]*${key}[[:space:]]*=" "$file" | tail -n 1 || true)"
+  if [[ -z "$line" ]]; then
+    printf ''
+    return 0
+  fi
+
+  value="${line#*=}"
+  value="$(printf '%s' "$value" | sed -E 's/[[:space:]]+#.*$//' | xargs)"
+  value="${value%\"}"
+  value="${value#\"}"
+  printf '%s' "$value"
+}
+
 wait_for_health() {
   local url="$1"
   local label="$2"
@@ -196,14 +219,29 @@ build_and_push_images() {
 }
 
 write_cloud_tfvars() {
-  local static_site_url jwt_secret webhook_secret oauth_redirect
+  local static_site_url jwt_secret webhook_secret oauth_redirect existing_jwt_secret existing_webhook_secret aws_region
 
   static_site_url="$(tf_out_raw static_site_url)"
   [[ -n "$static_site_url" ]] || die "static_site_url output missing after infra bootstrap."
 
-  jwt_secret="$(openssl rand -hex 32)"
-  webhook_secret="$(openssl rand -hex 32)"
+  existing_jwt_secret="$(read_tfvar_value_from_file "$CLOUD_TFVARS_FILE" "control_api_jwt_signing_secret")"
+  existing_webhook_secret="$(read_tfvar_value_from_file "$CLOUD_TFVARS_FILE" "control_api_github_webhook_secret")"
+
+  jwt_secret="$(printf '%s' "$existing_jwt_secret" | xargs)"
+  webhook_secret="$(printf '%s' "$existing_webhook_secret" | xargs)"
+
+  if [[ -z "$jwt_secret" || "$jwt_secret" == "replace-with-cloud-jwt-secret" ]]; then
+    jwt_secret="$(openssl rand -hex 32)"
+  fi
+  if [[ -z "$webhook_secret" || "$webhook_secret" == "replace-with-cloud-webhook-secret" ]]; then
+    webhook_secret="$(openssl rand -hex 32)"
+  fi
+
   oauth_redirect="${static_site_url}/v1/callback"
+  aws_region="$(read_tfvar_value "aws_region")"
+  if [[ -z "$aws_region" ]]; then
+    aws_region="us-west-1"
+  fi
 
   log_step "Writing cloud runtime tfvars ($CLOUD_TFVARS_FILE)"
   cat > "$CLOUD_TFVARS_FILE" <<EOF
@@ -225,11 +263,16 @@ control_api_jwt_signing_secret         = "${jwt_secret}"
 control_api_github_webhook_secret      = "${webhook_secret}"
 control_api_github_oauth_redirect_url  = "${oauth_redirect}"
 control_api_ai_prompt_version          = "phase7-v1"
-control_api_ai_provider_model          = "mock-ops-v1"
+control_api_ai_provider_model          = "us.amazon.nova-lite-v1:0"
+control_api_ai_bedrock_region          = "${aws_region}"
 
-cognito_callback_urls                  = ["${static_site_url}/dashboard"]
-cognito_logout_urls                    = ["${static_site_url}/login"]
 EOF
+
+  if [[ -n "${OPENAI_API_KEY_SECRET_KEY:-}" ]]; then
+    cat >> "$CLOUD_TFVARS_FILE" <<EOF
+control_api_openai_api_key_secret_key  = "${OPENAI_API_KEY_SECRET_KEY}"
+EOF
+  fi
 
   if [[ "$SKIP_IMAGE_BUILD" -eq 0 ]]; then
     cat >> "$CLOUD_TFVARS_FILE" <<EOF
@@ -248,13 +291,13 @@ apply_cloud_runtime() {
 
   tf init -reconfigure -backend-config=backend.hcl
   tf validate
-  tf plan -input=false -lock=false -refresh=false -var='bootstrap_state_backend=false' -var-file=cloud.auto.tfvars
+  tf plan -input=false -lock=false -refresh=false -var-file=cloud.auto.tfvars
 
   confirm_or_exit "Apply cloud runtime changes now?"
   if [[ "$AUTO_YES" -eq 1 ]]; then
-    tf apply -input=false -auto-approve -var='bootstrap_state_backend=false' -var-file=cloud.auto.tfvars
+    tf apply -input=false -auto-approve -var-file=cloud.auto.tfvars
   else
-    tf apply -input=false -var='bootstrap_state_backend=false' -var-file=cloud.auto.tfvars
+    tf apply -input=false -var-file=cloud.auto.tfvars
   fi
 }
 
@@ -301,8 +344,6 @@ verify_cloud_endpoints() {
   printf '\nCloud deployment summary:\n'
   printf '  - Frontend URL: %s\n' "$site_url"
   printf '  - API URL: http://%s\n' "$alb_dns"
-  printf '  - Cognito user pool: %s\n' "$(tf_out_raw cognito_user_pool_id)"
-  printf '  - Cognito app client: %s\n' "$(tf_out_raw cognito_app_client_id)"
   printf '  - ALB WAF ARN: %s\n' "$(tf_out_raw waf_regional_web_acl_arn)"
   printf '  - CloudFront WAF ARN: %s\n' "$(tf_out_raw waf_cloudfront_web_acl_arn)"
   printf '  - Control API DB URL: %s\n' "$(tf_out_raw control_api_db_url)"

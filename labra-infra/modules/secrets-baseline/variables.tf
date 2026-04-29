@@ -7,7 +7,7 @@ variable "tags" {
   default = {}
 }
 
-variable "create_placeholder_secret" {
+variable "create_platform_secret" {
   type    = bool
   default = true
 }
