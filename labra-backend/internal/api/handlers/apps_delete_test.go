@@ -1,29 +1,34 @@
 package handlers
 
 import (
+	"context"
 	"database/sql"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
 	"testing"
 
-	_ "github.com/mattn/go-sqlite3"
+	"labra-backend/internal/api/store"
 )
 
 func TestDeleteAppHandler_RemovesAppAndRelatedData(t *testing.T) {
 	db := setupDeleteAppTestDB(t)
 	prevStore := appStore
+	prevTeardown := teardownAppInfraFn
 	t.Cleanup(func() {
 		appStore = prevStore
+		teardownAppInfraFn = prevTeardown
 		_ = db.Close()
 	})
 	InitAppStore(db)
+	teardownAppInfraFn = func(_ context.Context, _ store.App) error { return nil }
 
 	appID := seedDeleteAppFixture(t, db, 77, "delete-me", "acme/delete-me")
 	otherAppID := seedDeleteAppFixture(t, db, 77, "keep-me", "acme/keep-me")
 
 	req := httptest.NewRequest(http.MethodDelete, "/v1/apps/"+strconv.FormatInt(appID, 10), nil)
-	req.Header.Set("X-User-ID", "77")
+	req = withTestPrincipal(req, 77)
 	rr := httptest.NewRecorder()
 	DeleteAppHandler(rr, req)
 	if rr.Code != http.StatusNoContent {
@@ -44,16 +49,19 @@ func TestDeleteAppHandler_RemovesAppAndRelatedData(t *testing.T) {
 func TestDeleteAppHandler_NotFoundForOtherUser(t *testing.T) {
 	db := setupDeleteAppTestDB(t)
 	prevStore := appStore
+	prevTeardown := teardownAppInfraFn
 	t.Cleanup(func() {
 		appStore = prevStore
+		teardownAppInfraFn = prevTeardown
 		_ = db.Close()
 	})
 	InitAppStore(db)
+	teardownAppInfraFn = func(_ context.Context, _ store.App) error { return nil }
 
 	appID := seedDeleteAppFixture(t, db, 77, "owned-app", "acme/owned-app")
 
 	req := httptest.NewRequest(http.MethodDelete, "/v1/apps/"+strconv.FormatInt(appID, 10), nil)
-	req.Header.Set("X-User-ID", "88")
+	req = withTestPrincipal(req, 88)
 	rr := httptest.NewRecorder()
 	DeleteAppHandler(rr, req)
 	if rr.Code != http.StatusNotFound {
@@ -63,15 +71,37 @@ func TestDeleteAppHandler_NotFoundForOtherUser(t *testing.T) {
 	assertCount(t, db, "SELECT COUNT(*) FROM apps WHERE id = ?", appID, 1)
 }
 
+func TestDeleteAppHandler_TeardownFailurePreventsDelete(t *testing.T) {
+	db := setupDeleteAppTestDB(t)
+	prevStore := appStore
+	prevTeardown := teardownAppInfraFn
+	t.Cleanup(func() {
+		appStore = prevStore
+		teardownAppInfraFn = prevTeardown
+		_ = db.Close()
+	})
+	InitAppStore(db)
+
+	appID := seedDeleteAppFixture(t, db, 77, "owned-app", "acme/owned-app")
+	teardownAppInfraFn = func(_ context.Context, _ store.App) error {
+		return errors.New("boom")
+	}
+
+	req := httptest.NewRequest(http.MethodDelete, "/v1/apps/"+strconv.FormatInt(appID, 10), nil)
+	req = withTestPrincipal(req, 77)
+	rr := httptest.NewRecorder()
+	DeleteAppHandler(rr, req)
+	if rr.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500, got %d body=%s", rr.Code, rr.Body.String())
+	}
+
+	assertCount(t, db, "SELECT COUNT(*) FROM apps WHERE id = ?", appID, 1)
+}
+
 func setupDeleteAppTestDB(t *testing.T) *sql.DB {
 	t.Helper()
 
-	db, err := sql.Open("sqlite3", ":memory:")
-	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
-	}
-	// Keep all queries on the same in-memory database connection.
-	db.SetMaxOpenConns(1)
+	db := openInMemorySQLiteSingleConn(t)
 
 	schema := `
 	CREATE TABLE IF NOT EXISTS apps (
@@ -158,12 +188,11 @@ func setupDeleteAppTestDB(t *testing.T) *sql.DB {
 	  status TEXT NOT NULL,
 	  input_excerpt TEXT,
 	  output_excerpt TEXT,
+	  output_text TEXT,
 	  created_at INTEGER NOT NULL DEFAULT (unixepoch())
 	);
 	`
-	if _, err := db.Exec(schema); err != nil {
-		t.Fatalf("apply schema: %v", err)
-	}
+	applySchema(t, db, schema)
 	return db
 }
 
@@ -221,7 +250,7 @@ func seedDeleteAppFixture(t *testing.T, db *sql.DB, userID int64, name, repo str
 	if _, err := db.Exec(`
 		INSERT INTO app_infra_outputs (app_id, user_id, bucket_name, distribution_id, site_url, updated_at)
 		VALUES (?, ?, ?, ?, ?, unixepoch())
-	`, appID, userID, "labra-bucket", "pending-dist", "https://preview.labra.local"); err != nil {
+	`, appID, userID, "labra-bucket", "E1ABCDEF234567", "https://d111111abcdef8.cloudfront.net"); err != nil {
 		t.Fatalf("seed app_infra_outputs: %v", err)
 	}
 

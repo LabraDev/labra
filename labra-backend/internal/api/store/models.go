@@ -72,6 +72,7 @@ type AIRequestLog struct {
 	Status        string `json:"status"`
 	InputExcerpt  string `json:"input_excerpt,omitempty"`
 	OutputExcerpt string `json:"output_excerpt,omitempty"`
+	OutputText    string `json:"output_text,omitempty"`
 	CreatedAt     int64  `json:"created_at"`
 }
 
@@ -236,4 +237,5 @@ type CreateAIRequestLogInput struct {
 	Status        string
 	InputExcerpt  string
 	OutputExcerpt string
+	OutputText    string
 }

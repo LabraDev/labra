@@ -39,10 +39,18 @@ func recordAppConfigVersion(ctx context.Context, app store.App, source string) e
 
 func ensureAppInfraOutput(ctx context.Context, app store.App) error {
 	bucketName := buildBucketName(app)
-	distributionID := fmt.Sprintf("pending-dist-%d", app.ID)
 	siteURL := appSiteURLOrDefault(app)
+	distributionID := ""
 
-	_, err := appStore.UpsertAppInfraOutput(ctx, store.UpsertAppInfraOutputInput{
+	existing, err := appStore.GetAppInfraOutputByAppForUser(ctx, app.ID, app.UserID)
+	if err == nil {
+		distributionID = strings.TrimSpace(existing.DistributionID)
+		if strings.TrimSpace(siteURL) == "" {
+			siteURL = strings.TrimSpace(existing.SiteURL)
+		}
+	}
+
+	_, err = appStore.UpsertAppInfraOutput(ctx, store.UpsertAppInfraOutputInput{
 		AppID:          app.ID,
 		UserID:         app.UserID,
 		BucketName:     bucketName,
@@ -75,7 +83,7 @@ func GetAppConfigHistoryHandler(w http.ResponseWriter, r *http.Request) {
 
 	userID, ok := readUserID(r)
 	if !ok {
-		writeJSONError(w, http.StatusUnauthorized, "missing user id: pass X-User-ID header")
+		writeJSONError(w, http.StatusUnauthorized, "missing auth principal")
 		return
 	}
 
@@ -115,7 +123,7 @@ func GetAppInfraOutputsHandler(w http.ResponseWriter, r *http.Request) {
 
 	userID, ok := readUserID(r)
 	if !ok {
-		writeJSONError(w, http.StatusUnauthorized, "missing user id: pass X-User-ID header")
+		writeJSONError(w, http.StatusUnauthorized, "missing auth principal")
 		return
 	}
 

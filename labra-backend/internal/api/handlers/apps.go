@@ -1,10 +1,8 @@
 package handlers
 
 import (
-	"context"
 	"database/sql"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"regexp"
@@ -15,10 +13,16 @@ import (
 	"labra-backend/internal/api/store"
 )
 
+// appStore is the global store instance - gets set once at startup via InitAppStore
 var appStore *store.Store
 
+// teardownAppInfraFn lets tests swap out the real infra teardown with a fake
+var teardownAppInfraFn = teardownDeploymentInfra
+
+// repoPattern validates that repo names look like "owner/repo" before we do anything with them
 var repoPattern = regexp.MustCompile(`^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`)
 
+// createAppRequest is what the frontend sends when creating a new app
 type createAppRequest struct {
 	Name              string `json:"name"`
 	RepoFullName      string `json:"repo_full_name"`
@@ -30,6 +34,7 @@ type createAppRequest struct {
 	AutoDeployEnabled *bool  `json:"auto_deploy_enabled"`
 }
 
+// updateAppRequest is for patch requests - all fields optional so we can do partial updates
 type updateAppRequest struct {
 	Name              *string `json:"name"`
 	Branch            *string `json:"branch"`
@@ -40,415 +45,73 @@ type updateAppRequest struct {
 	AutoDeployEnabled *bool   `json:"auto_deploy_enabled"`
 }
 
+// InitAppStore wires up the global store - called once from main
 func InitAppStore(db *sql.DB) {
 	appStore = store.New(db)
 }
 
-func CreateAppHandler(w http.ResponseWriter, r *http.Request) {
-	if appStore == nil {
-		writeJSONError(w, http.StatusInternalServerError, "store not initialized")
-		return
-	}
-
-	userID, ok := readUserID(r)
-	if !ok {
-		writeJSONError(w, http.StatusUnauthorized, "missing user id: pass X-User-ID header")
-		return
-	}
-
-	var body createAppRequest
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeJSONError(w, http.StatusBadRequest, "invalid JSON body")
-		return
-	}
-
-	in, err := normalizeCreateApp(body)
-	if err != nil {
-		writeJSONError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	in.UserID = userID
-
-	if err := ensureUserCanTrackRepo(r.Context(), in.UserID, in.RepoFullName); err != nil {
-		if accessErr, ok := err.(repoAccessErr); ok {
-			writeJSONError(w, accessErr.Status, accessErr.Message)
-			return
-		}
-		writeJSONError(w, http.StatusInternalServerError, "failed to validate GitHub repository access")
-		return
-	}
-
-	app, err := appStore.CreateApp(r.Context(), in)
-	if err != nil {
-		if strings.Contains(strings.ToLower(err.Error()), "unique") {
-			writeJSONError(w, http.StatusConflict, "app already exists for repo+branch")
-			return
-		}
-		writeJSONError(w, http.StatusInternalServerError, "failed to create app")
-		return
-	}
-
-	_ = ensureAppInfraOutput(r.Context(), app)
-	_ = recordAppConfigVersion(r.Context(), app, "create")
-
-	writeJSON(w, http.StatusCreated, app)
-}
-
-func ListAppsHandler(w http.ResponseWriter, r *http.Request) {
-	if appStore == nil {
-		writeJSONError(w, http.StatusInternalServerError, "store not initialized")
-		return
-	}
-
-	userID, ok := readUserID(r)
-	if !ok {
-		writeJSONError(w, http.StatusUnauthorized, "missing user id: pass X-User-ID header")
-		return
-	}
-
-	apps, err := appStore.ListAppsByUser(r.Context(), userID)
-	if err != nil {
-		writeJSONError(w, http.StatusInternalServerError, "failed to list apps")
-		return
-	}
-
-	writeJSON(w, http.StatusOK, map[string]any{"apps": apps})
-}
-
-func GetAppHandler(w http.ResponseWriter, r *http.Request) {
-	if appStore == nil {
-		writeJSONError(w, http.StatusInternalServerError, "store not initialized")
-		return
-	}
-
-	userID, ok := readUserID(r)
-	if !ok {
-		writeJSONError(w, http.StatusUnauthorized, "missing user id: pass X-User-ID header")
-		return
-	}
-
-	appID, err := readIDFromPathOrQuery(r, "apps")
-	if err != nil {
-		writeJSONError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-
-	app, err := appStore.GetAppByIDForUser(r.Context(), appID, userID)
-	if err != nil {
-		if errors.Is(err, store.ErrNotFound) {
-			writeJSONError(w, http.StatusNotFound, "app not found")
-			return
-		}
-		writeJSONError(w, http.StatusInternalServerError, "failed to load app")
-		return
-	}
-
-	writeJSON(w, http.StatusOK, app)
-}
-
-func PatchAppHandler(w http.ResponseWriter, r *http.Request) {
-	if appStore == nil {
-		writeJSONError(w, http.StatusInternalServerError, "store not initialized")
-		return
-	}
-
-	userID, ok := readUserID(r)
-	if !ok {
-		writeJSONError(w, http.StatusUnauthorized, "missing user id: pass X-User-ID header")
-		return
-	}
-
-	appID, err := readIDFromPathOrQuery(r, "apps")
-	if err != nil {
-		writeJSONError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-
-	var body updateAppRequest
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeJSONError(w, http.StatusBadRequest, "invalid JSON body")
-		return
-	}
-
-	current, err := appStore.GetAppByIDForUser(r.Context(), appID, userID)
-	if err != nil {
-		if errors.Is(err, store.ErrNotFound) {
-			writeJSONError(w, http.StatusNotFound, "app not found")
-			return
-		}
-		writeJSONError(w, http.StatusInternalServerError, "failed to load app")
-		return
-	}
-
-	next, err := mergeAppUpdate(current, body)
-	if err != nil {
-		writeJSONError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-
-	app, err := appStore.UpdateAppForUser(r.Context(), appID, userID, next)
-	if err != nil {
-		if errors.Is(err, store.ErrNotFound) {
-			writeJSONError(w, http.StatusNotFound, "app not found")
-			return
-		}
-		writeJSONError(w, http.StatusInternalServerError, "failed to update app")
-		return
-	}
-
-	_ = ensureAppInfraOutput(r.Context(), app)
-	_ = recordAppConfigVersion(r.Context(), app, "patch")
-
-	writeJSON(w, http.StatusOK, app)
-}
-
-func DeleteAppHandler(w http.ResponseWriter, r *http.Request) {
-	if appStore == nil {
-		writeJSONError(w, http.StatusInternalServerError, "store not initialized")
-		return
-	}
-
-	userID, ok := readUserID(r)
-	if !ok {
-		writeJSONError(w, http.StatusUnauthorized, "missing user id: pass X-User-ID header")
-		return
-	}
-
-	appID, err := readIDFromPathOrQuery(r, "apps")
-	if err != nil {
-		writeJSONError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-
-	if err := appStore.DeleteAppForUser(r.Context(), appID, userID); err != nil {
-		if errors.Is(err, store.ErrNotFound) {
-			writeJSONError(w, http.StatusNotFound, "app not found")
-			return
-		}
-		writeJSONError(w, http.StatusInternalServerError, "failed to delete app")
-		return
-	}
-
-	w.WriteHeader(http.StatusNoContent)
-}
-
-func normalizeCreateApp(req createAppRequest) (store.CreateAppInput, error) {
-	name := strings.TrimSpace(req.Name)
-	repo := strings.TrimSpace(req.RepoFullName)
-	branch := strings.TrimSpace(req.Branch)
-	buildType := strings.TrimSpace(req.BuildType)
-	outputDir := strings.TrimSpace(req.OutputDir)
-	rootDir := strings.TrimSpace(req.RootDir)
-	siteURL := strings.TrimSpace(req.SiteURL)
-
-	if name == "" {
-		return store.CreateAppInput{}, fmt.Errorf("name is required")
-	}
-	if repo == "" {
-		return store.CreateAppInput{}, fmt.Errorf("repo_full_name is required")
-	}
-	if !repoPattern.MatchString(repo) {
-		return store.CreateAppInput{}, fmt.Errorf("repo_full_name must look like owner/repo")
-	}
-	if branch == "" {
-		branch = "main"
-	}
-	if buildType == "" {
-		buildType = "static"
-	}
-	if buildType != "static" {
-		return store.CreateAppInput{}, fmt.Errorf("build_type must be static for MVP")
-	}
-	if outputDir == "" {
-		outputDir = "dist"
-	}
-
-	autoDeploy := true
-	if req.AutoDeployEnabled != nil {
-		autoDeploy = *req.AutoDeployEnabled
-	}
-
-	return store.CreateAppInput{
-		Name:              name,
-		RepoFullName:      strings.ToLower(repo),
-		Branch:            branch,
-		BuildType:         buildType,
-		OutputDir:         outputDir,
-		RootDir:           rootDir,
-		SiteURL:           siteURL,
-		AutoDeployEnabled: autoDeploy,
-	}, nil
-}
-
-func mergeAppUpdate(current store.App, req updateAppRequest) (store.UpdateAppInput, error) {
-	next := store.UpdateAppInput{
-		Name:              current.Name,
-		Branch:            current.Branch,
-		BuildType:         current.BuildType,
-		OutputDir:         current.OutputDir,
-		RootDir:           current.RootDir,
-		SiteURL:           current.SiteURL,
-		AutoDeployEnabled: current.AutoDeployEnabled,
-	}
-
-	if req.Name != nil {
-		next.Name = strings.TrimSpace(*req.Name)
-	}
-	if req.Branch != nil {
-		next.Branch = strings.TrimSpace(*req.Branch)
-	}
-	if req.BuildType != nil {
-		next.BuildType = strings.TrimSpace(*req.BuildType)
-	}
-	if req.OutputDir != nil {
-		next.OutputDir = strings.TrimSpace(*req.OutputDir)
-	}
-	if req.RootDir != nil {
-		next.RootDir = strings.TrimSpace(*req.RootDir)
-	}
-	if req.SiteURL != nil {
-		next.SiteURL = strings.TrimSpace(*req.SiteURL)
-	}
-	if req.AutoDeployEnabled != nil {
-		next.AutoDeployEnabled = *req.AutoDeployEnabled
-	}
-
-	if next.Name == "" {
-		return store.UpdateAppInput{}, fmt.Errorf("name cannot be empty")
-	}
-	if next.Branch == "" {
-		return store.UpdateAppInput{}, fmt.Errorf("branch cannot be empty")
-	}
-	if next.BuildType == "" {
-		next.BuildType = "static"
-	}
-	if next.BuildType != "static" {
-		return store.UpdateAppInput{}, fmt.Errorf("build_type must be static for MVP")
-	}
-	if next.OutputDir == "" {
-		next.OutputDir = "dist"
-	}
-
-	return next, nil
-}
-
-type repoAccessErr struct {
-	Status  int
-	Message string
-}
-
-func (e repoAccessErr) Error() string {
-	return e.Message
-}
-
-func ensureUserCanTrackRepo(ctx context.Context, userID int64, repoFullName string) error {
-	repo := strings.TrimSpace(repoFullName)
-	if repo == "" {
-		return repoAccessErr{Status: http.StatusBadRequest, Message: "repo_full_name is required"}
-	}
-
-	// If GitHub App credentials are not configured, keep existing fallback behavior.
-	if !githubAppConfigured() {
-		return nil
-	}
-
-	installation, err := appStore.GetGitHubInstallationByUserID(ctx, userID)
-	if err != nil {
-		if err == store.ErrNotFound {
-			return repoAccessErr{
-				Status:  http.StatusBadRequest,
-				Message: "GitHub App installation missing. Install GitHub App and select repositories.",
-			}
-		}
-		return repoAccessErr{Status: http.StatusInternalServerError, Message: "failed to load GitHub installation"}
-	}
-
-	installationToken, err := createGitHubInstallationAccessToken(installation.InstallationID)
-	if err != nil {
-		return repoAccessErr{Status: http.StatusBadGateway, Message: err.Error()}
-	}
-
-	repos, err := fetchGitHubInstallationRepositories(installationToken)
-	if err != nil {
-		return repoAccessErr{Status: http.StatusBadGateway, Message: err.Error()}
-	}
-
-	repoLower := strings.ToLower(repo)
-	for _, candidate := range repos {
-		if strings.ToLower(strings.TrimSpace(candidate.FullName)) == repoLower {
-			return nil
-		}
-	}
-
-	return repoAccessErr{
-		Status:  http.StatusForbidden,
-		Message: "Repository is not granted to your GitHub App installation. Update installation access and retry.",
-	}
-}
-
+// readUserID grabs the authenticated user's id from request context
+// returns false if the user isn't logged in
 func readUserID(r *http.Request) (int64, bool) {
 	if principal, ok := auth.PrincipalFromContext(r.Context()); ok && principal.UserID > 0 {
 		return principal.UserID, true
 	}
-
-	v := strings.TrimSpace(r.Header.Get("X-User-ID"))
-	if v == "" {
-		v = strings.TrimSpace(r.URL.Query().Get("user_id"))
-	}
-	if v == "" {
-		return 0, false
-	}
-
-	id, err := strconv.ParseInt(v, 10, 64)
-	if err != nil || id <= 0 {
-		return 0, false
-	}
-	return id, true
+	return 0, false
 }
 
-func readIDFromPathOrQuery(r *http.Request, base string) (int64, error) {
-	if raw := strings.TrimSpace(r.URL.Query().Get("id")); raw != "" {
-		id, err := strconv.ParseInt(raw, 10, 64)
-		if err != nil || id <= 0 {
+// readIDFromPathOrQuery tries to get a numeric id from the url path or query string
+// path format is /v1/<base>/<id> or query format is ?id=<id>
+func readIDFromPathOrQuery(r *http.Request, basePath string) (int64, error) {
+	// check query string first - ?id=123
+	if rawIDString := strings.TrimSpace(r.URL.Query().Get("id")); rawIDString != "" {
+		parsedID, err := strconv.ParseInt(rawIDString, 10, 64)
+		if err != nil || parsedID <= 0 {
 			return 0, fmt.Errorf("id must be a positive integer")
 		}
-		return id, nil
+		return parsedID, nil
 	}
 
-	prefix := "/v1/" + strings.Trim(base, "/") + "/"
-	path := strings.TrimSpace(r.URL.Path)
-	if !strings.HasPrefix(path, prefix) {
+	// fall back to path parsing - /v1/apps/123
+	urlPrefix := "/v1/" + strings.Trim(basePath, "/") + "/"
+	urlPath := strings.TrimSpace(r.URL.Path)
+	if !strings.HasPrefix(urlPath, urlPrefix) {
 		return 0, fmt.Errorf("id not found in path")
 	}
 
-	raw := strings.Trim(strings.TrimPrefix(path, prefix), "/")
-	if raw == "" {
+	rawPathSegment := strings.Trim(strings.TrimPrefix(urlPath, urlPrefix), "/")
+	if rawPathSegment == "" {
 		return 0, fmt.Errorf("id is required")
 	}
-	parts := strings.Split(raw, "/")
-	raw = strings.TrimSpace(parts[0])
-	if raw == "" {
+	// take only the first path segment in case there are more segments after the id
+	pathSegments := strings.Split(rawPathSegment, "/")
+	firstSegment := strings.TrimSpace(pathSegments[0])
+	if firstSegment == "" {
 		return 0, fmt.Errorf("id is required")
 	}
 
-	id, err := strconv.ParseInt(raw, 10, 64)
-	if err != nil || id <= 0 {
+	parsedID, err := strconv.ParseInt(firstSegment, 10, 64)
+	if err != nil || parsedID <= 0 {
 		return 0, fmt.Errorf("id must be a positive integer")
 	}
-	return id, nil
+	return parsedID, nil
 }
 
-func writeJSONError(w http.ResponseWriter, status int, message string) {
-	writeJSON(w, status, map[string]any{
+// writeJSONError sends a structured error response - all errors go through here for consistency
+func writeJSONError(w http.ResponseWriter, statusCode int, errorMessage string) {
+	writeJSON(w, statusCode, map[string]any{
 		"error": map[string]any{
-			"status":  status,
-			"message": message,
+			"status":  statusCode,
+			"message": errorMessage,
 		},
 	})
 }
 
-func writeJSON(w http.ResponseWriter, status int, body any) {
+// writeJSON serializes body to json and sends it - sets cache headers to prevent stale responses
+func writeJSON(w http.ResponseWriter, statusCode int, responseBody any) {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(body)
+	w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
+	w.Header().Set("Pragma", "no-cache")
+	w.Header().Set("Expires", "0")
+	w.WriteHeader(statusCode)
+	_ = json.NewEncoder(w).Encode(responseBody)
 }
