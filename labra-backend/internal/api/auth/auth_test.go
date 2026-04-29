@@ -18,12 +18,12 @@ func TestHMACValidatorAndRBAC(t *testing.T) {
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-		"iss":            "https://issuer.example.com",
-		"aud":            "labra-api",
-		"exp":            time.Now().Add(time.Hour).Unix(),
-		"sub":            "user-abc",
-		"user_id":        42,
-		"cognito:groups": []string{"owner"},
+		"iss":     "https://issuer.example.com",
+		"aud":     "labra-api",
+		"exp":     time.Now().Add(time.Hour).Unix(),
+		"sub":     "user-abc",
+		"user_id": 42,
+		"roles":   []string{"owner"},
 	})
 	rawToken, err := token.SignedString(secret)
 	if err != nil {

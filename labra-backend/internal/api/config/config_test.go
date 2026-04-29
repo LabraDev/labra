@@ -66,11 +66,11 @@ func TestLoadAISettingsDefaultsAndValidation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected defaults to load, got error: %v", err)
 	}
-	if !cfg.AIFeatureEnabled {
-		t.Fatalf("expected AI feature enabled by default")
+	if !cfg.AIEnabled {
+		t.Fatalf("expected AI enabled by default")
 	}
-	if cfg.AIKillSwitchEnabled {
-		t.Fatalf("expected AI kill switch disabled by default")
+	if cfg.DisableAI {
+		t.Fatalf("expected AI not disabled by default")
 	}
 	if cfg.AIPromptVersion == "" {
 		t.Fatalf("expected non-empty AI prompt version default")
@@ -78,13 +78,13 @@ func TestLoadAISettingsDefaultsAndValidation(t *testing.T) {
 
 	_, err = Load(func(key string) string {
 		vals := map[string]string{
-			"APP_ENV":            "dev",
-			"DB_URL":             "file:test.db",
-			"AI_FEATURE_ENABLED": "not-a-bool",
+			"APP_ENV":    "dev",
+			"DB_URL":     "file:test.db",
+			"AI_ENABLED": "not-a-bool",
 		}
 		return vals[key]
 	})
 	if err == nil {
-		t.Fatalf("expected error for invalid AI_FEATURE_ENABLED")
+		t.Fatalf("expected error for invalid AI_ENABLED")
 	}
 }

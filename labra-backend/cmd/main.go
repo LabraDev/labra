@@ -71,21 +71,24 @@ func main() {
 		handlers.InitAssumeRoleVerifier(awsverify.NewSTSAssumeRoleVerifier())
 	}
 	handlers.InitAIRuntime(handlers.AIRuntimeConfig{
-		FeatureEnabled:  cfg.AIFeatureEnabled,
-		KillSwitch:      cfg.AIKillSwitchEnabled,
+		AIEnabled: cfg.AIEnabled,
+		DisableAI: cfg.DisableAI,
 		PromptVersion:   cfg.AIPromptVersion,
 		ProviderModel:   cfg.AIProviderModel,
+		BedrockRegion:   cfg.AIBedrockRegion,
 		ProviderTimeout: time.Duration(cfg.AIProviderTimeoutMS) * time.Millisecond,
 		ProviderRetries: cfg.AIProviderRetries,
+		OpenAIAPIKey:    cfg.OpenAIAPIKey,
+		OpenAIBaseURL:   cfg.OpenAIBaseURL,
 	})
 
-	validator := auth.HMACValidator{
+	validator := &auth.HMACValidator{
 		Issuer:   strings.TrimSpace(cfg.JWTIssuer),
 		Audience: strings.TrimSpace(cfg.JWTAudience),
 		Secret:   []byte(strings.TrimSpace(cfg.JWTSigningSecret)),
 	}
 	routes.InitAuthMiddleware(validator)
-	handlers.InitAuthRuntime(validator, auth.TokenIssuer{
+	handlers.InitAuthRuntime(auth.TokenIssuer{
 		Issuer:   strings.TrimSpace(cfg.JWTIssuer),
 		Audience: strings.TrimSpace(cfg.JWTAudience),
 		Secret:   []byte(strings.TrimSpace(cfg.JWTSigningSecret)),
@@ -100,7 +103,7 @@ func main() {
 	routes.HealthRoute(s)
 	routes.Oauth(s)
 	routes.GitHubRoutes(s)
-	routes.AuthSessionRoutes(s)
+	routes.AuthRoutes(s)
 	routes.AWSConnections(s)
 	routes.Apps(s)
 	routes.Deploy(s)

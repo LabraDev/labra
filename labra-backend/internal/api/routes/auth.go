@@ -6,8 +6,7 @@ import (
 	"github.com/go-fuego/fuego"
 )
 
-func AuthSessionRoutes(s *fuego.Server) {
-	fuego.PostStd(s, "/v1/auth/session", handlers.PostAuthSessionHandler)
+func AuthRoutes(s *fuego.Server) {
 	fuego.GetStd(s, "/v1/profile", withAuth(handlers.GetProfileHandler))
 	fuego.PostStd(s, "/v1/auth/logout", withAuth(handlers.PostLogoutHandler))
 }
