@@ -9,54 +9,62 @@ import (
 	"labra-backend/internal/api/store"
 )
 
+// enqueueWebhookDeployments kicks off deployments for all eligible apps from a push event
+// returns a list of app_id/deployment_id pairs that were triggered
 func enqueueWebhookDeployments(
 	r *http.Request,
-	payload githubPushEvent,
+	pushPayload githubPushEvent,
 	eligibleApps []map[string]any,
 ) ([]map[string]any, error) {
-	triggered := make([]map[string]any, 0, len(eligibleApps))
+	triggeredDeployments := make([]map[string]any, 0, len(eligibleApps))
 
-	branch, _ := extractBranch(payload.Ref)
-	commitSHA := strings.TrimSpace(payload.After)
-	if commitSHA == "" {
-		commitSHA = strings.TrimSpace(payload.HeadCommit.ID)
+	// extract commit info from the push payload to store on each deployment
+	pushedBranch, _ := extractBranch(pushPayload.Ref)
+	commitSHAValue := strings.TrimSpace(pushPayload.After)
+	if commitSHAValue == "" {
+		// fall back to head_commit.id if after is somehow empty
+		commitSHAValue = strings.TrimSpace(pushPayload.HeadCommit.ID)
 	}
-	commitMessage := strings.TrimSpace(payload.HeadCommit.Message)
-	commitAuthor := strings.TrimSpace(payload.HeadCommit.Author.Name)
-	deliveryID := strings.TrimSpace(r.Header.Get("X-GitHub-Delivery"))
+	commitMessageValue := strings.TrimSpace(pushPayload.HeadCommit.Message)
+	commitAuthorValue := strings.TrimSpace(pushPayload.HeadCommit.Author.Name)
+	githubDeliveryID := strings.TrimSpace(r.Header.Get("X-GitHub-Delivery"))
 
-	for _, eligible := range eligibleApps {
-		appID, err := mustInt64(eligible["id"])
+	for _, eligibleApp := range eligibleApps {
+		// pull out the app id and user id from the eligible app map
+		appIDValue, err := mustInt64(eligibleApp["id"])
 		if err != nil {
 			return nil, fmt.Errorf("invalid eligible app id: %w", err)
 		}
-		userID, err := mustInt64(eligible["user_id"])
+		appUserIDValue, err := mustInt64(eligibleApp["user_id"])
 		if err != nil {
 			return nil, fmt.Errorf("invalid eligible app user_id: %w", err)
 		}
 
-		app, err := appStore.GetAppByIDForUser(r.Context(), appID, userID)
+		// reload the app from the database to get the latest version
+		appRecord, err := appStore.GetAppByIDForUser(r.Context(), appIDValue, appUserIDValue)
 		if err != nil {
 			return nil, fmt.Errorf("failed to load app for webhook deploy: %w", err)
 		}
 
-		deployment, err := queueDeployment(r.Context(), app, store.CreateDeploymentInput{
+		// queue the deployment with a correlation id that ties it back to this delivery
+		queuedDeployment, err := queueDeployment(r.Context(), appRecord, store.CreateDeploymentInput{
 			TriggerType:   "webhook",
-			CommitSHA:     commitSHA,
-			CommitMessage: commitMessage,
-			CommitAuthor:  commitAuthor,
-			Branch:        branch,
-			CorrelationID: fmt.Sprintf("webhook-%s-%d-%d", deliveryID, app.ID, time.Now().UnixNano()),
+			CommitSHA:     commitSHAValue,
+			CommitMessage: commitMessageValue,
+			CommitAuthor:  commitAuthorValue,
+			Branch:        pushedBranch,
+			// include delivery id and timestamp to make the correlation id unique
+			CorrelationID: fmt.Sprintf("webhook-%s-%d-%d", githubDeliveryID, appRecord.ID, time.Now().UnixNano()),
 		}, "deployment queued by webhook trigger")
 		if err != nil {
 			return nil, fmt.Errorf("failed to create webhook deployment: %w", err)
 		}
 
-		triggered = append(triggered, map[string]any{
-			"app_id":        app.ID,
-			"deployment_id": deployment.ID,
+		triggeredDeployments = append(triggeredDeployments, map[string]any{
+			"app_id":        appRecord.ID,
+			"deployment_id": queuedDeployment.ID,
 		})
 	}
 
-	return triggered, nil
+	return triggeredDeployments, nil
 }

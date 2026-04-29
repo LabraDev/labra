@@ -9,12 +9,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
-
-	_ "github.com/mattn/go-sqlite3"
 )
 
-func TestSprint1ReadinessAndAWSConnectionsFlow(t *testing.T) {
-	db := setupSprint1TestDB(t)
+func TestReadinessAndAWSConnectionsFlow(t *testing.T) {
+	db := setupReadinessAWSTestDB(t)
 	previousStore := appStore
 	previousProbe := readinessProbe
 	t.Cleanup(func() {
@@ -39,7 +37,7 @@ func TestSprint1ReadinessAndAWSConnectionsFlow(t *testing.T) {
 		payload := []byte(`{"role_arn":"arn:aws:iam::123456789012:role/labra-dev-access","external_id":"ext-id-12345","region":"us-west-2"}`)
 		req := httptest.NewRequest(http.MethodPost, "/v1/aws-connections", bytes.NewReader(payload))
 		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("X-User-ID", "7")
+		req = withTestPrincipal(req, 7)
 		rr := httptest.NewRecorder()
 
 		UpsertAWSConnectionHandler(rr, req)
@@ -48,7 +46,7 @@ func TestSprint1ReadinessAndAWSConnectionsFlow(t *testing.T) {
 		}
 
 		listReq := httptest.NewRequest(http.MethodGet, "/v1/aws-connections", nil)
-		listReq.Header.Set("X-User-ID", "7")
+		listReq = withTestPrincipal(listReq, 7)
 		listRR := httptest.NewRecorder()
 		ListAWSConnectionsHandler(listRR, listReq)
 		if listRR.Code != http.StatusOK {
@@ -73,7 +71,7 @@ func TestSprint1ReadinessAndAWSConnectionsFlow(t *testing.T) {
 		}
 
 		deleteReq := httptest.NewRequest(http.MethodDelete, "/v1/aws-connections/1", nil)
-		deleteReq.Header.Set("X-User-ID", "7")
+		deleteReq = withTestPrincipal(deleteReq, 7)
 		deleteRR := httptest.NewRecorder()
 		DeleteAWSConnectionHandler(deleteRR, deleteReq)
 		if deleteRR.Code != http.StatusNoContent {
@@ -81,7 +79,7 @@ func TestSprint1ReadinessAndAWSConnectionsFlow(t *testing.T) {
 		}
 
 		listAfterDeleteReq := httptest.NewRequest(http.MethodGet, "/v1/aws-connections", nil)
-		listAfterDeleteReq.Header.Set("X-User-ID", "7")
+		listAfterDeleteReq = withTestPrincipal(listAfterDeleteReq, 7)
 		listAfterDeleteRR := httptest.NewRecorder()
 		ListAWSConnectionsHandler(listAfterDeleteRR, listAfterDeleteReq)
 		if listAfterDeleteRR.Code != http.StatusOK {
@@ -103,7 +101,7 @@ func TestSprint1ReadinessAndAWSConnectionsFlow(t *testing.T) {
 		payload := []byte(`{"role_arn":"bad-arn","external_id":"ext-id-12345","region":"us-west-2"}`)
 		req := httptest.NewRequest(http.MethodPost, "/v1/aws-connections", bytes.NewReader(payload))
 		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("X-User-ID", "7")
+		req = withTestPrincipal(req, 7)
 		rr := httptest.NewRecorder()
 
 		UpsertAWSConnectionHandler(rr, req)
@@ -113,13 +111,10 @@ func TestSprint1ReadinessAndAWSConnectionsFlow(t *testing.T) {
 	})
 }
 
-func setupSprint1TestDB(t *testing.T) *sql.DB {
+func setupReadinessAWSTestDB(t *testing.T) *sql.DB {
 	t.Helper()
 
-	db, err := sql.Open("sqlite3", ":memory:")
-	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
-	}
+	db := openInMemorySQLite(t)
 
 	schema := `
 	CREATE TABLE IF NOT EXISTS aws_connections (
@@ -150,9 +145,7 @@ func setupSprint1TestDB(t *testing.T) *sql.DB {
 	);
 	`
 
-	if _, err := db.Exec(schema); err != nil {
-		t.Fatalf("apply schema: %v", err)
-	}
+	applySchema(t, db, schema)
 
 	return db
 }

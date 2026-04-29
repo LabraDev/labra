@@ -13,36 +13,42 @@ import (
 	"time"
 
 	"labra-backend/internal/api/store"
-
-	_ "github.com/mattn/go-sqlite3"
 )
 
-func TestSprint4Phase5Phase6Flow(t *testing.T) {
-	db := setupSprint4TestDB(t)
+func TestDeployAndWebhookFlow(t *testing.T) {
+	db := setupDeployWebhookTestDB(t)
 
 	prevStore := appStore
 	prevAsync := runDeploymentAsync
+	prevExecutor := executeDeploymentPipelineFn
 	prevSecret := githubWebhookSecret
 	prevNow := webhookNowUnix
 	t.Cleanup(func() {
 		appStore = prevStore
 		runDeploymentAsync = prevAsync
+		executeDeploymentPipelineFn = prevExecutor
 		githubWebhookSecret = prevSecret
 		webhookNowUnix = prevNow
 		_ = db.Close()
 	})
 
 	InitAppStore(db)
-	InitWebhook("sprint4-secret")
+	InitWebhook("test-webhook-secret")
 	runDeploymentAsync = false
+	executeDeploymentPipelineFn = func(_ context.Context, _ int64, _ store.App, _ string) (deploymentPipelineResult, error) {
+		return deploymentPipelineResult{
+			SiteURL: "https://example.cloudfront.net",
+			Status:  "succeeded",
+		}, nil
+	}
 	webhookNowUnix = func() int64 { return time.Now().Unix() }
 
-	appID := createSprint4App(t, 42, "Sprint 4 Site", "owner/repo", "main")
+	appID := createDeployTestApp(t, 42, "Deploy Test Site", "owner/repo", "main")
 	appPath := "/v1/apps/" + strconv.FormatInt(appID, 10)
 
 	t.Run("manual deploy succeeds and logs are queryable", func(t *testing.T) {
 		createReq := httptest.NewRequest(http.MethodPost, appPath+"/deploy", nil)
-		createReq.Header.Set("X-User-ID", "42")
+		createReq = withTestPrincipal(createReq, 42)
 		createRR := httptest.NewRecorder()
 		CreateDeployHandler(createRR, createReq)
 		if createRR.Code != http.StatusAccepted {
@@ -62,7 +68,7 @@ func TestSprint4Phase5Phase6Flow(t *testing.T) {
 		}
 
 		deployReq := httptest.NewRequest(http.MethodGet, "/v1/deploys/"+strconv.FormatInt(createBody.Deployment.ID, 10), nil)
-		deployReq.Header.Set("X-User-ID", "42")
+		deployReq = withTestPrincipal(deployReq, 42)
 		deployRR := httptest.NewRecorder()
 		GetDeployHandler(deployRR, deployReq)
 		if deployRR.Code != http.StatusOK {
@@ -84,7 +90,7 @@ func TestSprint4Phase5Phase6Flow(t *testing.T) {
 		}
 
 		logReq := httptest.NewRequest(http.MethodGet, "/v1/deploys/"+strconv.FormatInt(createBody.Deployment.ID, 10)+"/logs", nil)
-		logReq.Header.Set("X-User-ID", "42")
+		logReq = withTestPrincipal(logReq, 42)
 		logRR := httptest.NewRecorder()
 		GetDeployLogsHandler(logRR, logReq)
 		if logRR.Code != http.StatusOK {
@@ -114,7 +120,7 @@ func TestSprint4Phase5Phase6Flow(t *testing.T) {
 		}
 	})
 
-	t.Run("cancel and retry endpoints enforce and execute sprint 4 lifecycle", func(t *testing.T) {
+	t.Run("cancel and retry lifecycle", func(t *testing.T) {
 		queued, err := appStore.CreateDeployment(context.Background(), store.CreateDeploymentInput{
 			AppID:       appID,
 			UserID:      42,
@@ -127,7 +133,7 @@ func TestSprint4Phase5Phase6Flow(t *testing.T) {
 		}
 
 		cancelReq := httptest.NewRequest(http.MethodPost, "/v1/deploys/"+strconv.FormatInt(queued.ID, 10)+"/cancel", bytes.NewReader([]byte(`{}`)))
-		cancelReq.Header.Set("X-User-ID", "42")
+		cancelReq = withTestPrincipal(cancelReq, 42)
 		cancelRR := httptest.NewRecorder()
 		CancelDeployHandler(cancelRR, cancelReq)
 		if cancelRR.Code != http.StatusOK {
@@ -147,7 +153,7 @@ func TestSprint4Phase5Phase6Flow(t *testing.T) {
 		}
 
 		retryReq := httptest.NewRequest(http.MethodPost, "/v1/deploys/"+strconv.FormatInt(queued.ID, 10)+"/retry", bytes.NewReader([]byte(`{}`)))
-		retryReq.Header.Set("X-User-ID", "42")
+		retryReq = withTestPrincipal(retryReq, 42)
 		retryRR := httptest.NewRecorder()
 		RetryDeployHandler(retryRR, retryReq)
 		if retryRR.Code != http.StatusAccepted {
@@ -171,7 +177,7 @@ func TestSprint4Phase5Phase6Flow(t *testing.T) {
 		}
 
 		retriedReq := httptest.NewRequest(http.MethodGet, "/v1/deploys/"+strconv.FormatInt(retryBody.Deployment.ID, 10), nil)
-		retriedReq.Header.Set("X-User-ID", "42")
+		retriedReq = withTestPrincipal(retriedReq, 42)
 		retriedRR := httptest.NewRecorder()
 		GetDeployHandler(retriedRR, retriedReq)
 		if retriedRR.Code != http.StatusOK {
@@ -189,11 +195,11 @@ func TestSprint4Phase5Phase6Flow(t *testing.T) {
 	})
 
 	t.Run("webhook auto deploy uses dedupe and freshness checks", func(t *testing.T) {
-		payload := webhookPayload("refs/heads/main", "owner/repo", "abc123def456", "feat: sprint4", "Casey")
-		deliveryID := "sprint4-delivery-1"
+		payload := webhookPayload("refs/heads/main", "owner/repo", "abc123def456", "feat: new feature", "Casey")
+		deliveryID := "deploy-webhook-delivery-1"
 		now := strconv.FormatInt(time.Now().Unix(), 10)
 
-		req1 := signedWebhookRequest(payload, deliveryID, "sprint4-secret")
+		req1 := signedWebhookRequest(payload, deliveryID, "test-webhook-secret")
 		req1.Header.Set("X-Labra-Webhook-Timestamp", now)
 		rr1 := httptest.NewRecorder()
 		GitHubWebhookHandler(rr1, req1)
@@ -212,7 +218,7 @@ func TestSprint4Phase5Phase6Flow(t *testing.T) {
 			t.Fatalf("expected duplicate_count=0, got %d body=%v", got, body1)
 		}
 
-		req2 := signedWebhookRequest(payload, deliveryID, "sprint4-secret")
+		req2 := signedWebhookRequest(payload, deliveryID, "test-webhook-secret")
 		req2.Header.Set("X-Labra-Webhook-Timestamp", now)
 		rr2 := httptest.NewRecorder()
 		GitHubWebhookHandler(rr2, req2)
@@ -231,7 +237,7 @@ func TestSprint4Phase5Phase6Flow(t *testing.T) {
 			t.Fatalf("expected duplicate_count=1, got %d body=%v", got, body2)
 		}
 
-		staleReq := signedWebhookRequest(payload, "sprint4-delivery-stale", "sprint4-secret")
+		staleReq := signedWebhookRequest(payload, "deploy-webhook-stale-delivery", "test-webhook-secret")
 		staleReq.Header.Set("X-Labra-Webhook-Timestamp", strconv.FormatInt(time.Now().Add(-2*time.Hour).Unix(), 10))
 		staleRR := httptest.NewRecorder()
 		GitHubWebhookHandler(staleRR, staleReq)
@@ -240,7 +246,7 @@ func TestSprint4Phase5Phase6Flow(t *testing.T) {
 		}
 
 		historyReq := httptest.NewRequest(http.MethodGet, appPath+"/deploys", nil)
-		historyReq.Header.Set("X-User-ID", "42")
+		historyReq = withTestPrincipal(historyReq, 42)
 		historyRR := httptest.NewRecorder()
 		GetAppDeploysHandler(historyRR, historyReq)
 		if historyRR.Code != http.StatusOK {
@@ -270,13 +276,10 @@ func TestSprint4Phase5Phase6Flow(t *testing.T) {
 	})
 }
 
-func setupSprint4TestDB(t *testing.T) *sql.DB {
+func setupDeployWebhookTestDB(t *testing.T) *sql.DB {
 	t.Helper()
 
-	db, err := sql.Open("sqlite3", ":memory:")
-	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
-	}
+	db := openInMemorySQLite(t)
 
 	schema := `
 	CREATE TABLE IF NOT EXISTS apps (
@@ -334,14 +337,12 @@ func setupSprint4TestDB(t *testing.T) *sql.DB {
 	);
 	`
 
-	if _, err := db.Exec(schema); err != nil {
-		t.Fatalf("apply schema: %v", err)
-	}
+	applySchema(t, db, schema)
 
 	return db
 }
 
-func createSprint4App(t *testing.T, userID int64, name, repo, branch string) int64 {
+func createDeployTestApp(t *testing.T, userID int64, name, repo, branch string) int64 {
 	t.Helper()
 
 	payload := []byte(`{
@@ -355,7 +356,7 @@ func createSprint4App(t *testing.T, userID int64, name, repo, branch string) int
 	}`)
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/apps", bytes.NewReader(payload))
-	req.Header.Set("X-User-ID", strconv.FormatInt(userID, 10))
+	req = withTestPrincipal(req, userID)
 	req.Header.Set("Content-Type", "application/json")
 	rr := httptest.NewRecorder()
 	CreateAppHandler(rr, req)

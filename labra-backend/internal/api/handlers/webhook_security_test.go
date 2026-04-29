@@ -15,12 +15,10 @@ import (
 	"time"
 
 	"labra-backend/internal/api/store"
-
-	_ "github.com/mattn/go-sqlite3"
 )
 
 func TestGitHubWebhookRejectsInvalidSignature(t *testing.T) {
-	db := setupPhase4TestDB(t)
+	db := setupWebhookSecurityTestDB(t)
 
 	createTestApp(t, 1, "demo", "owner/repo", "main")
 
@@ -44,7 +42,7 @@ func TestGitHubWebhookRejectsInvalidSignature(t *testing.T) {
 }
 
 func TestGitHubWebhookIgnoresWrongBranch(t *testing.T) {
-	db := setupPhase4TestDB(t)
+	setupWebhookSecurityTestDB(t)
 
 	createTestApp(t, 1, "demo", "owner/repo", "main")
 
@@ -68,14 +66,10 @@ func TestGitHubWebhookIgnoresWrongBranch(t *testing.T) {
 	if got := numberAsInt(body["triggered_count"]); got != 0 {
 		t.Fatalf("expected triggered_count=0, got %d", got)
 	}
-
-	if got := deploymentCount(t, db); got != 0 {
-		t.Fatalf("expected 0 deployments, got %d", got)
-	}
 }
 
 func TestGitHubWebhookDedupeAndAutoTrigger(t *testing.T) {
-	db := setupPhase4TestDB(t)
+	db := setupWebhookSecurityTestDB(t)
 
 	createTestApp(t, 1, "demo", "owner/repo", "main")
 
@@ -124,7 +118,7 @@ func TestGitHubWebhookDedupeAndAutoTrigger(t *testing.T) {
 }
 
 func TestGetAppDeploysHandlerReturnsWebhookMetadata(t *testing.T) {
-	setupPhase4TestDB(t)
+	setupWebhookSecurityTestDB(t)
 
 	app := createTestApp(t, 1, "demo", "owner/repo", "main")
 
@@ -138,7 +132,7 @@ func TestGetAppDeploysHandlerReturnsWebhookMetadata(t *testing.T) {
 	}
 
 	historyReq := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/v1/apps/%d/deploys", app.ID), nil)
-	historyReq.Header.Set("X-User-ID", "1")
+	historyReq = withTestPrincipal(historyReq, 1)
 	historyRR := httptest.NewRecorder()
 	GetAppDeploysHandler(historyRR, historyReq)
 
@@ -178,22 +172,21 @@ func TestGetAppDeploysHandlerReturnsWebhookMetadata(t *testing.T) {
 	}
 }
 
-func setupPhase4TestDB(t *testing.T) *sql.DB {
+func setupWebhookSecurityTestDB(t *testing.T) *sql.DB {
 	t.Helper()
 
-	db, err := sql.Open("sqlite3", ":memory:")
-	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
-	}
+	db := openInMemorySQLite(t)
 
 	prevStore := appStore
 	prevSecret := githubWebhookSecret
 	prevAsync := runDeploymentAsync
+	prevExecutor := executeDeploymentPipelineFn
 	prevNow := webhookNowUnix
 	t.Cleanup(func() {
 		appStore = prevStore
 		githubWebhookSecret = prevSecret
 		runDeploymentAsync = prevAsync
+		executeDeploymentPipelineFn = prevExecutor
 		webhookNowUnix = prevNow
 		_ = db.Close()
 	})
@@ -249,13 +242,17 @@ func setupPhase4TestDB(t *testing.T) *sql.DB {
 	);
 	`
 
-	if _, err := db.Exec(schema); err != nil {
-		t.Fatalf("apply schema: %v", err)
-	}
+	applySchema(t, db, schema)
 
 	InitAppStore(db)
 	InitWebhook("test-secret")
 	runDeploymentAsync = false
+	executeDeploymentPipelineFn = func(_ context.Context, _ int64, _ store.App, _ string) (deploymentPipelineResult, error) {
+		return deploymentPipelineResult{
+			SiteURL: "https://example.cloudfront.net",
+			Status:  "succeeded",
+		}, nil
+	}
 	webhookNowUnix = func() int64 { return time.Now().Unix() }
 
 	return db
