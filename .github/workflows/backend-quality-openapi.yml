@@ -1,15 +1,15 @@
-name: Sprint1 Backend Checks
+name: Backend Quality + OpenAPI
 
 on:
   pull_request:
     paths:
       - 'labra-backend/**'
-      - '.github/workflows/sprint1-backend-check.yml'
+      - '.github/workflows/backend-quality-openapi.yml'
   push:
     branches: [main]
     paths:
       - 'labra-backend/**'
-      - '.github/workflows/sprint1-backend-check.yml'
+      - '.github/workflows/backend-quality-openapi.yml'
 
 jobs:
   backend-check:

@@ -1,18 +1,18 @@
-name: Sprint1 Frontend Checks
+name: Frontend CI Build Artifact
 
 on:
   pull_request:
     paths:
       - 'labra-frontend/**'
-      - '.github/workflows/sprint1-frontend-check.yml'
+      - '.github/workflows/frontend-ci-build-artifact.yml'
   push:
     branches: [main]
     paths:
       - 'labra-frontend/**'
-      - '.github/workflows/sprint1-frontend-check.yml'
+      - '.github/workflows/frontend-ci-build-artifact.yml'
 
 jobs:
-  frontend-check:
+  frontend-ci:
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -35,5 +35,15 @@ jobs:
       - name: Type checks
         run: npm run check
 
-      - name: Frontend smoke and shell tests
+      - name: Run tests
         run: npm test
+
+      - name: Build app
+        run: npm run build
+
+      - name: Upload built frontend
+        uses: actions/upload-artifact@v4
+        with:
+          name: labra-frontend-dist
+          path: labra-frontend/build
+          if-no-files-found: error

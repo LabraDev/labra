@@ -1,18 +1,18 @@
-name: Sprint3 Frontend CI/CD
+name: Frontend Quality Checks
 
 on:
   pull_request:
     paths:
       - 'labra-frontend/**'
-      - '.github/workflows/sprint3-frontend-cicd.yml'
+      - '.github/workflows/frontend-quality.yml'
   push:
     branches: [main]
     paths:
       - 'labra-frontend/**'
-      - '.github/workflows/sprint3-frontend-cicd.yml'
+      - '.github/workflows/frontend-quality.yml'
 
 jobs:
-  frontend-ci:
+  frontend-check:
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -35,15 +35,5 @@ jobs:
       - name: Type checks
         run: npm run check
 
-      - name: Run tests
+      - name: Frontend smoke and shell tests
         run: npm test
-
-      - name: Build app
-        run: npm run build
-
-      - name: Upload built frontend
-        uses: actions/upload-artifact@v4
-        with:
-          name: labra-frontend-dist
-          path: labra-frontend/build
-          if-no-files-found: error

@@ -1,15 +1,15 @@
-name: Sprint3 Backend CI/CD
+name: Backend CI Build Artifact
 
 on:
   pull_request:
     paths:
       - 'labra-backend/**'
-      - '.github/workflows/sprint3-backend-cicd.yml'
+      - '.github/workflows/backend-ci-build-artifact.yml'
   push:
     branches: [main]
     paths:
       - 'labra-backend/**'
-      - '.github/workflows/sprint3-backend-cicd.yml'
+      - '.github/workflows/backend-ci-build-artifact.yml'
 
 jobs:
   quality:

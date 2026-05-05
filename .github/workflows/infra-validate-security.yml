@@ -1,15 +1,15 @@
-name: Sprint1 Infra Checks
+name: Infra Validate + Security
 
 on:
   pull_request:
     paths:
       - 'labra-infra/**'
-      - '.github/workflows/sprint1-infra-check.yml'
+      - '.github/workflows/infra-validate-security.yml'
   push:
     branches: [main]
     paths:
       - 'labra-infra/**'
-      - '.github/workflows/sprint1-infra-check.yml'
+      - '.github/workflows/infra-validate-security.yml'
 
 jobs:
   terraform-check:

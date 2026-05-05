@@ -1,4 +1,4 @@
-name: Sprint5 AI + Hardening CI
+name: Fullstack AI Hardening Checks
 
 on:
   pull_request:
@@ -6,14 +6,14 @@ on:
       - 'labra-backend/**'
       - 'labra-frontend/**'
       - 'labra-infra/**'
-      - '.github/workflows/sprint5-ai-hardening.yml'
+      - '.github/workflows/fullstack-ai-hardening-checks.yml'
   push:
     branches: [main]
     paths:
       - 'labra-backend/**'
       - 'labra-frontend/**'
       - 'labra-infra/**'
-      - '.github/workflows/sprint5-ai-hardening.yml'
+      - '.github/workflows/fullstack-ai-hardening-checks.yml'
 
 jobs:
   backend-sprint5:

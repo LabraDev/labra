@@ -1,15 +1,15 @@
-name: Sprint3 Infra CI/CD
+name: Infra CI Validate Plan OIDC
 
 on:
   pull_request:
     paths:
       - 'labra-infra/**'
-      - '.github/workflows/sprint3-infra-cicd.yml'
+      - '.github/workflows/infra-ci-validate-plan-oidc.yml'
   push:
     branches: [main]
     paths:
       - 'labra-infra/**'
-      - '.github/workflows/sprint3-infra-cicd.yml'
+      - '.github/workflows/infra-ci-validate-plan-oidc.yml'
 
 jobs:
   infra-validate:
