@@ -2,9 +2,6 @@ name: Backend Quality + OpenAPI
 
 on:
   pull_request:
-    paths:
-      - 'labra-backend/**'
-      - '.github/workflows/backend-quality-openapi.yml'
   push:
     branches: [main]
     paths:

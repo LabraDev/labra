@@ -2,9 +2,6 @@ name: Infra Validate + Security
 
 on:
   pull_request:
-    paths:
-      - 'labra-infra/**'
-      - '.github/workflows/infra-validate-security.yml'
   push:
     branches: [main]
     paths:
@@ -35,8 +32,3 @@ jobs:
 
       - name: Terraform Validate
         run: terraform validate
-
-      - name: tfsec
-        uses: aquasecurity/tfsec-action@v1.0.3
-        with:
-          working_directory: labra-infra

@@ -2,9 +2,6 @@ name: Frontend CI Build Artifact
 
 on:
   pull_request:
-    paths:
-      - 'labra-frontend/**'
-      - '.github/workflows/frontend-ci-build-artifact.yml'
   push:
     branches: [main]
     paths:

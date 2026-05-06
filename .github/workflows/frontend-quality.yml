@@ -2,9 +2,6 @@ name: Frontend Quality Checks
 
 on:
   pull_request:
-    paths:
-      - 'labra-frontend/**'
-      - '.github/workflows/frontend-quality.yml'
   push:
     branches: [main]
     paths:

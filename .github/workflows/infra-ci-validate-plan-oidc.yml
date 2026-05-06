@@ -2,9 +2,6 @@ name: Infra CI Validate Plan OIDC
 
 on:
   pull_request:
-    paths:
-      - 'labra-infra/**'
-      - '.github/workflows/infra-ci-validate-plan-oidc.yml'
   push:
     branches: [main]
     paths:
