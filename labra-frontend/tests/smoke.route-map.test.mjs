@@ -13,7 +13,7 @@ const requiredRoutes = [
   'src/routes/settings/+page.svelte'
 ];
 
-test('route map includes Sprint 1 scaffold pages', () => {
+test('route map includes required scaffold pages', () => {
   for (const routeFile of requiredRoutes) {
     assert.equal(existsSync(routeFile), true, `missing route file: ${routeFile}`);
   }

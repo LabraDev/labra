@@ -11,7 +11,7 @@ on:
       - '.github/workflows/fullstack-ai-hardening-checks.yml'
 
 jobs:
-  backend-sprint5:
+  backend-hardening:
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -26,13 +26,13 @@ jobs:
         with:
           go-version-file: labra-backend/go.mod
 
-      - name: Sprint 5 backend tests
-        run: go test ./internal/api/handlers -run TestSprint5Phase7Phase8Flow -v
+      - name: Deployment and webhook flow tests
+        run: go test ./internal/api/handlers -run TestDeployAndWebhookFlow -v
 
       - name: Full backend tests
         run: go test ./...
 
-  frontend-sprint5:
+  frontend-hardening:
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -55,13 +55,13 @@ jobs:
       - name: Type checks
         run: npm run check
 
-      - name: Sprint shell tests
+      - name: Shell tests
         run: node --test tests/smoke.route-map.test.mjs tests/component.shell.test.mjs
 
       - name: Build app
         run: npm run build
 
-  infra-sprint5:
+  infra-hardening:
     runs-on: ubuntu-latest
     defaults:
       run:
