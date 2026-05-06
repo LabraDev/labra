@@ -2,9 +2,6 @@ name: Infra Basic Validation
 
 on:
   pull_request:
-    paths:
-      - 'labra-infra/**'
-      - '.github/workflows/infra-basic-validation.yml'
   push:
     branches: [main]
     paths:
