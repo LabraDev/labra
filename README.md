@@ -148,4 +148,3 @@ The spec is generated in CI and not committed to git. To generate it locally:
 ./labra-backend/scripts/generate-openapi.sh
 # Output: labra-backend/dist/openapi.json
 ```
-
