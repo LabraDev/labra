@@ -20,6 +20,7 @@ resource "aws_security_group" "frontend" {
   }
 
   egress {
+    description = "Allow all outbound traffic"
     from_port   = 0
     to_port     = 0
     protocol    = "-1"
@@ -45,6 +46,7 @@ resource "aws_security_group" "api" {
   }
 
   egress {
+    description = "Allow all outbound traffic"
     from_port   = 0
     to_port     = 0
     protocol    = "-1"
@@ -70,6 +72,7 @@ resource "aws_security_group" "internal" {
   }
 
   egress {
+    description = "Allow all outbound traffic"
     from_port   = 0
     to_port     = 0
     protocol    = "-1"
