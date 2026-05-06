@@ -2,11 +2,6 @@ name: Fullstack AI Hardening Checks
 
 on:
   pull_request:
-    paths:
-      - 'labra-backend/**'
-      - 'labra-frontend/**'
-      - 'labra-infra/**'
-      - '.github/workflows/fullstack-ai-hardening-checks.yml'
   push:
     branches: [main]
     paths:
